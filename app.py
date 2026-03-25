@@ -36,7 +36,10 @@ def parse_date(value: str) -> datetime | None:
             return datetime.strptime(text, fmt)
         except ValueError:
             continue
-    return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def load_incidents(csv_path: Path, limit: int | None = None) -> List[Dict[str, str]]:

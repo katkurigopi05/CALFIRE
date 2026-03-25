@@ -33,6 +33,10 @@ class AppTests(unittest.TestCase):
         self.assertEqual(summary["countiesImpacted"], 2)
         self.assertEqual(summary["latestIncidentDate"], "2020-01-03")
 
+    def test_parse_date_supports_iso_z(self) -> None:
+        parsed = app.parse_date("2013-08-17T15:25:00Z")
+        self.assertIsNotNone(parsed)
+
 
 if __name__ == "__main__":
     unittest.main()
