@@ -14,7 +14,7 @@ California wildfire incident analysis project with a lightweight local website d
 Prerequisite: Python 3.10+
 
 ```bash
-cd /home/runner/work/CALFIRE/CALFIRE
+cd /path/to/CALFIRE
 python app.py --host 127.0.0.1 --port 8000
 ```
 
