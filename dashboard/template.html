@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CALFIRE — California Wildfire Dashboard</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --plane:          #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-small:   #2a78d6;
+    --series-large:   #e34948;
+    --series-county:  #2a78d6;
+    --status-critical:#d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --plane:          #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-small:   #3987e5;
+      --series-large:   #e66767;
+      --series-county:  #3987e5;
+      --status-critical:#e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --plane:          #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-small:   #3987e5;
+    --series-large:   #e66767;
+    --series-county:  #3987e5;
+    --status-critical:#e66767;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .viz-root { background: var(--plane); color: var(--text-primary); min-height: 100%; padding: 24px 20px 60px; }
+  .wrap { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .subtitle { color: var(--text-secondary); font-size: 0.9rem; margin: 0 0 28px; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .stat-tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .stat-tile .value { font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat-tile .label { font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; }
+
+  .panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px 20px; margin-bottom: 20px; }
+  .panel h2 { font-size: 1.05rem; margin: 0 0 2px; }
+  .panel .desc { font-size: 0.82rem; color: var(--text-secondary); margin: 0 0 14px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .legend { display: flex; gap: 16px; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 10px; flex-wrap: wrap; }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+  svg text { fill: var(--text-muted); font-size: 10px; }
+  svg .axis-line { stroke: var(--baseline); stroke-width: 1; }
+  svg .gridline { stroke: var(--gridline); stroke-width: 1; }
+  svg .value-label { fill: var(--text-secondary); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+  .tooltip {
+    position: fixed; pointer-events: none; z-index: 50;
+    background: var(--text-primary); color: var(--surface-1);
+    font-size: 0.78rem; padding: 6px 9px; border-radius: 6px;
+    max-width: 220px; line-height: 1.4; opacity: 0; transition: opacity 0.08s;
+  }
+  .tooltip.show { opacity: 1; }
+
+  .toggle-btn {
+    font-size: 0.75rem; color: var(--text-secondary); background: none;
+    border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px;
+    cursor: pointer; float: right;
+  }
+  .toggle-btn:hover { color: var(--text-primary); }
+
+  table.data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  table.data-table th, table.data-table td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--gridline); font-variant-numeric: tabular-nums; }
+  table.data-table th:first-child, table.data-table td:first-child { text-align: left; }
+  table.data-table th { color: var(--text-secondary); font-weight: 500; }
+
+  footer { text-align: center; font-size: 0.75rem; color: var(--text-muted); margin-top: 30px; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <div class="wrap">
+    <h1>CALFIRE — California Wildfire Dashboard</h1>
+    <p class="subtitle">California Fire Incidents dataset (CAL FIRE), <span id="date-range"></span> · built offline from historical incident records</p>
+
+    <div class="stat-row" id="stat-row"></div>
+
+    <div class="panel">
+      <h2>Fires Over Time</h2>
+      <p class="desc">Incident count and total acres burned per year, split by small (&lt;1,000 ac) vs large (≥1,000 ac) fires.</p>
+      <div class="legend">
+        <span class="item"><span class="swatch" style="background:var(--series-small)"></span>Small fire</span>
+        <span class="item"><span class="swatch" style="background:var(--series-large)"></span>Large fire</span>
+      </div>
+      <div class="grid-2">
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Incident count</div>
+          <div id="chart-yearly-count"></div>
+        </div>
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Total acres burned</div>
+          <div id="chart-yearly-acres"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Seasonality</h2>
+        <p class="desc">When large fires actually start.</p>
+        <div class="legend">
+          <span class="item"><span class="swatch" style="background:var(--series-small)"></span>Small</span>
+          <span class="item"><span class="swatch" style="background:var(--series-large)"></span>Large</span>
+        </div>
+        <div id="chart-seasonal"></div>
+      </div>
+      <div class="panel">
+        <button class="toggle-btn" data-toggle="county">Table view</button>
+        <h2>Top Counties by Acres Burned</h2>
+        <p class="desc">Cumulative acreage lost, 2013–2019.</p>
+        <div id="chart-county"></div>
+        <div id="table-county" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <button class="toggle-btn" data-toggle="map">Table view</button>
+      <h2>Geographic Distribution</h2>
+      <p class="desc">Every incident plotted by latitude/longitude — point size scales with acres burned (log).</p>
+      <div class="legend">
+        <span class="item"><span class="swatch" style="background:var(--series-small)"></span>Small fire</span>
+        <span class="item"><span class="swatch" style="background:var(--series-large)"></span>Large fire</span>
+      </div>
+      <div id="chart-map"></div>
+      <div id="table-map" style="display:none"></div>
+    </div>
+
+    <footer>Generated from California_Fire_Incidents.csv · CAL FIRE public incident data</footer>
+  </div>
+</div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const DATA = __DASHBOARD_DATA_JSON__;
+
+const tooltip = document.getElementById('tooltip');
+function showTip(html, x, y) {
+  tooltip.innerHTML = html;
+  tooltip.style.left = (x + 14) + 'px';
+  tooltip.style.top = (y + 14) + 'px';
+  tooltip.classList.add('show');
+}
+function hideTip() { tooltip.classList.remove('show'); }
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+function fmt(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return Math.round(n).toLocaleString();
+}
+
+function renderStackedBar(containerId, categories, smallVals, largeVals, width, height) {
+  const container = document.getElementById(containerId);
+  const margin = { top: 8, right: 8, bottom: 22, left: 38 };
+  const w = width - margin.left - margin.right;
+  const h = height - margin.top - margin.bottom;
+  const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
+  const totals = categories.map((c, i) => smallVals[i] + largeVals[i]);
+  const maxVal = Math.max(1, ...totals);
+  const barW = w / categories.length * 0.62;
+  const gap = 2;
+
+  for (let g = 0; g <= 4; g++) {
+    const y = margin.top + h - (h * g / 4);
+    svg.appendChild(svgEl('line', { class: 'gridline', x1: margin.left, x2: margin.left + w, y1: y, y2: y }));
+    const t = svgEl('text', { x: margin.left - 6, y: y + 3, 'text-anchor': 'end' });
+    t.textContent = fmt(maxVal * g / 4);
+    svg.appendChild(t);
+  }
+  svg.appendChild(svgEl('line', { class: 'axis-line', x1: margin.left, x2: margin.left + w, y1: margin.top + h, y2: margin.top + h }));
+
+  categories.forEach((cat, i) => {
+    const x = margin.left + (w / categories.length) * i + (w / categories.length - barW) / 2;
+    const smallH = (smallVals[i] / maxVal) * h;
+    const largeH = (largeVals[i] / maxVal) * h;
+    const yBase = margin.top + h;
+
+    const rSmall = svgEl('rect', { x, y: yBase - smallH, width: barW, height: Math.max(0, smallH - (largeH > 0 ? gap / 2 : 0)), rx: 3, fill: 'var(--series-small)' });
+    svg.appendChild(rSmall);
+    if (largeH > 0) {
+      const rLarge = svgEl('rect', { x, y: yBase - smallH - largeH, width: barW, height: Math.max(0, largeH - gap / 2), rx: 3, fill: 'var(--series-large)' });
+      svg.appendChild(rLarge);
+    }
+    [rSmall, ...(largeH > 0 ? [svg.lastChild] : [])].forEach((rect, seriesIdx) => {
+      rect.style.cursor = 'pointer';
+      rect.addEventListener('mousemove', (e) => {
+        const label = seriesIdx === 0 ? 'Small' : 'Large';
+        const val = seriesIdx === 0 ? smallVals[i] : largeVals[i];
+        showTip(`<b>${cat}</b><br>${label}: ${fmt(val)}`, e.clientX, e.clientY);
+      });
+      rect.addEventListener('mouseleave', hideTip);
+    });
+
+    const lbl = svgEl('text', { x: x + barW / 2, y: margin.top + h + 14, 'text-anchor': 'middle' });
+    lbl.textContent = cat;
+    svg.appendChild(lbl);
+  });
+
+  container.innerHTML = '';
+  container.appendChild(svg);
+}
+
+function renderLine(containerId, categories, values, width, height) {
+  const container = document.getElementById(containerId);
+  const margin = { top: 8, right: 8, bottom: 22, left: 46 };
+  const w = width - margin.left - margin.right;
+  const h = height - margin.top - margin.bottom;
+  const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
+  const maxVal = Math.max(1, ...values);
+
+  for (let g = 0; g <= 4; g++) {
+    const y = margin.top + h - (h * g / 4);
+    svg.appendChild(svgEl('line', { class: 'gridline', x1: margin.left, x2: margin.left + w, y1: y, y2: y }));
+    const t = svgEl('text', { x: margin.left - 6, y: y + 3, 'text-anchor': 'end' });
+    t.textContent = fmt(maxVal * g / 4);
+    svg.appendChild(t);
+  }
+  svg.appendChild(svgEl('line', { class: 'axis-line', x1: margin.left, x2: margin.left + w, y1: margin.top + h, y2: margin.top + h }));
+
+  const stepX = w / (categories.length - 1 || 1);
+  const pts = values.map((v, i) => [margin.left + i * stepX, margin.top + h - (v / maxVal) * h]);
+  const path = svgEl('path', { d: 'M' + pts.map(p => p.join(',')).join(' L'), fill: 'none', stroke: 'var(--series-small)', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+  svg.appendChild(path);
+
+  pts.forEach(([x, y], i) => {
+    const c = svgEl('circle', { cx: x, cy: y, r: 4, fill: 'var(--series-small)' });
+    c.style.cursor = 'pointer';
+    c.addEventListener('mousemove', (e) => showTip(`<b>${categories[i]}</b><br>${fmt(values[i])} acres`, e.clientX, e.clientY));
+    c.addEventListener('mouseleave', hideTip);
+    svg.appendChild(c);
+    if (i % Math.ceil(categories.length / 8) === 0 || i === categories.length - 1) {
+      const lbl = svgEl('text', { x, y: margin.top + h + 14, 'text-anchor': 'middle' });
+      lbl.textContent = categories[i];
+      svg.appendChild(lbl);
+    }
+  });
+
+  container.innerHTML = '';
+  container.appendChild(svg);
+}
+
+function renderHBar(containerId, labels, values, width, height) {
+  const container = document.getElementById(containerId);
+  const margin = { top: 4, right: 46, bottom: 4, left: 110 };
+  const w = width - margin.left - margin.right;
+  const rowH = (height - margin.top - margin.bottom) / labels.length;
+  const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
+  const maxVal = Math.max(1, ...values);
+
+  labels.forEach((label, i) => {
+    const y = margin.top + i * rowH;
+    const barH = Math.min(16, rowH * 0.6);
+    const barW = (values[i] / maxVal) * w;
+    const rect = svgEl('rect', { x: margin.left, y: y + (rowH - barH) / 2, width: barW, height: barH, rx: 3, fill: 'var(--series-county)' });
+    rect.style.cursor = 'pointer';
+    rect.addEventListener('mousemove', (e) => showTip(`<b>${label}</b><br>${fmt(values[i])} acres`, e.clientX, e.clientY));
+    rect.addEventListener('mouseleave', hideTip);
+    svg.appendChild(rect);
+
+    const lbl = svgEl('text', { x: margin.left - 8, y: y + rowH / 2 + 3, 'text-anchor': 'end' });
+    lbl.textContent = label;
+    svg.appendChild(lbl);
+
+    const val = svgEl('text', { class: 'value-label', x: margin.left + barW + 6, y: y + rowH / 2 + 3, 'text-anchor': 'start' });
+    val.textContent = fmt(values[i]);
+    svg.appendChild(val);
+  });
+
+  container.innerHTML = '';
+  container.appendChild(svg);
+}
+
+function renderScatterMap(containerId, points, width, height) {
+  const container = document.getElementById(containerId);
+  const margin = { top: 8, right: 8, bottom: 8, left: 8 };
+  const w = width - margin.left - margin.right;
+  const h = height - margin.top - margin.bottom;
+  const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
+
+  const lons = points.map(p => p.lon), lats = points.map(p => p.lat);
+  const lonMin = Math.min(...lons), lonMax = Math.max(...lons);
+  const latMin = Math.min(...lats), latMax = Math.max(...lats);
+  const lonSpan = lonMax - lonMin, latSpan = latMax - latMin;
+  const scale = Math.min(w / lonSpan, h / latSpan);
+  const offX = margin.left + (w - lonSpan * scale) / 2;
+  const offY = margin.top + (h - latSpan * scale) / 2;
+
+  const maxAcres = Math.max(...points.map(p => p.acres), 1);
+  points.forEach(p => {
+    const x = offX + (p.lon - lonMin) * scale;
+    const y = offY + (latMax - p.lat) * scale;
+    const r = 1.5 + (Math.log10(p.acres + 1) / Math.log10(maxAcres + 1)) * 7;
+    const c = svgEl('circle', {
+      cx: x, cy: y, r,
+      fill: p.large ? 'var(--series-large)' : 'var(--series-small)',
+      'fill-opacity': 0.55, stroke: 'var(--surface-1)', 'stroke-width': 0.5,
+    });
+    c.style.cursor = 'pointer';
+    c.addEventListener('mousemove', (e) => showTip(
+      `<b>${p.name || 'Fire'}</b><br>${p.county} County<br>${fmt(p.acres)} acres · ${p.year}`, e.clientX, e.clientY
+    ));
+    c.addEventListener('mouseleave', hideTip);
+    svg.appendChild(c);
+  });
+
+  container.innerHTML = '';
+  container.appendChild(svg);
+}
+
+function renderTable(containerId, headers, rows) {
+  const container = document.getElementById(containerId);
+  let html = '<table class="data-table"><thead><tr>';
+  headers.forEach(h => html += `<th>${h}</th>`);
+  html += '</tr></thead><tbody>';
+  rows.forEach(r => {
+    html += '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>';
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+document.querySelectorAll('.toggle-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.toggle;
+    const chart = document.getElementById('chart-' + key);
+    const table = document.getElementById('table-' + key);
+    const showingTable = table.style.display !== 'none';
+    chart.style.display = showingTable ? '' : 'none';
+    table.style.display = showingTable ? 'none' : '';
+    btn.textContent = showingTable ? 'Table view' : 'Chart view';
+  });
+});
+
+function init() {
+  const s = DATA.stats;
+  document.getElementById('date-range').textContent = `${s.date_min} to ${s.date_max}`;
+  document.getElementById('stat-row').innerHTML = `
+    <div class="stat-tile"><div class="value">${s.total_incidents.toLocaleString()}</div><div class="label">Incidents recorded</div></div>
+    <div class="stat-tile"><div class="value">${fmt(s.total_acres)}</div><div class="label">Total acres burned</div></div>
+    <div class="stat-tile"><div class="value">${s.large_count.toLocaleString()}</div><div class="label">Large fires (≥1,000 ac)</div></div>
+    <div class="stat-tile"><div class="value">${s.total_fatalities.toLocaleString()}</div><div class="label">Fatalities</div></div>
+    <div class="stat-tile"><div class="value">${s.total_structures_destroyed.toLocaleString()}</div><div class="label">Structures destroyed</div></div>
+  `;
+
+  const years = DATA.yearly.map(d => d.Year);
+  const smallByYear = DATA.yearly.map(d => d.count - d.large);
+  const largeByYear = DATA.yearly.map(d => d.large);
+  const acresByYear = DATA.yearly.map(d => d.acres);
+  renderStackedBar('chart-yearly-count', years, smallByYear, largeByYear, 500, 220);
+  renderLine('chart-yearly-acres', years, acresByYear, 500, 220);
+
+  const seasons = DATA.seasonal.map(d => d.Season);
+  const smallBySeason = DATA.seasonal.map(d => d.count - d.large);
+  const largeBySeason = DATA.seasonal.map(d => d.large);
+  renderStackedBar('chart-seasonal', seasons, smallBySeason, largeBySeason, 480, 240);
+
+  const countyLabels = DATA.county.map(d => d.CountyPrimary);
+  const countyVals = DATA.county.map(d => d.acres);
+  renderHBar('chart-county', countyLabels, countyVals, 480, 320);
+  renderTable('table-county', ['County', 'Incidents', 'Acres burned'],
+    DATA.county.map(d => [d.CountyPrimary, d.count.toLocaleString(), fmt(d.acres)]));
+
+  const points = DATA.points.map(p => ({ lat: p.lat, lon: p.lon, acres: p.acres, year: p.Year, large: p.Large, county: p.county, name: p.Name }));
+  renderScatterMap('chart-map', points, 1080, 460);
+  const topPoints = [...points].sort((a, b) => b.acres - a.acres).slice(0, 30);
+  renderTable('table-map', ['Fire', 'County', 'Year', 'Acres'],
+    topPoints.map(p => [p.name || '—', p.county, p.year, fmt(p.acres)]));
+}
+
+init();
+</script>
+</body>
+</html>
