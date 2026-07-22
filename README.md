@@ -70,3 +70,23 @@ better than Naive and the metrics disagree on the ranking, so treat that one
 as a toss-up rather than a real forecast. See
 `output/historical_trends_report.md` for the full breakdown, including
 decade and fire-cause tables.
+
+Breaking causes down by decade shows a real shift: **Power Line-caused
+fires went from essentially 0 before 1950 to 161 in the 2010s**, and Vehicle-
+and Equipment-caused fires show a similar rise — consistent with aging grid
+infrastructure and development pushing further into wildland, not just more
+fires overall (Lightning, the natural-cause baseline, stays comparatively
+flat).
+
+## Where and when fires peak, and destructiveness beyond acreage
+
+The dashboard's month × county heatmap (from the 2013-2019 point dataset)
+shows most counties peak in the Jun-Aug dry season, but a few — Ventura,
+Napa, Sonoma — peak in Oct/Nov instead, consistent with wind-driven fall
+fire season (Santa Ana/Diablo winds) rather than pure dryness.
+
+Acreage alone doesn't capture destructiveness: the dashboard also ranks
+fires by structures destroyed per 1,000 acres (small-footprint fires that
+hit dense areas hard) and by fatalities. Note the structures/fatalities
+fields are only populated for ~11%/~1% of fires respectively — treat these
+as "worst known cases," not a complete accounting.

@@ -140,6 +140,10 @@
           <div id="chart-cause"></div>
         </div>
       </div>
+      <div style="margin-top:18px;">
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">How causes have shifted, decade by decade (fire count, color relative to each cause's own busiest decade)</div>
+        <div id="chart-cause-decade"></div>
+      </div>
     </div>
 
     <div class="panel">
@@ -166,6 +170,21 @@
       <p class="desc">Fire count by month for each of the top counties (color intensity is relative to that county's own busiest month, so smaller counties' patterns still show up).</p>
       <div id="chart-heatmap"></div>
       <div id="table-peak-month" style="margin-top:16px;"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Destructiveness — Not Just Acreage</h2>
+      <p class="desc" id="destructive-desc"></p>
+      <div class="grid-2">
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Most destructive relative to size (structures destroyed per 1,000 acres)</div>
+          <div id="table-destructive"></div>
+        </div>
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Deadliest fires</div>
+          <div id="table-deadly"></div>
+        </div>
+      </div>
     </div>
 
     <div class="panel" id="panel-forecast" style="display:none">
@@ -581,45 +600,38 @@ function renderThresholdBar(containerId, items, width, height) {
   container.appendChild(svg);
 }
 
-function renderHeatmap(containerId, counties, heatRows, width, height) {
+function renderGridHeatmap(containerId, rowLabels, colLabels, matrix, width, height, tooltipFn, leftMargin) {
   const container = document.getElementById(containerId);
-  const margin = { top: 20, right: 8, bottom: 4, left: 120 };
+  const margin = { top: 20, right: 8, bottom: 4, left: leftMargin || 120 };
   const w = width - margin.left - margin.right;
-  const rowH = (height - margin.top - margin.bottom) / counties.length;
-  const colW = w / 12;
+  const rowH = (height - margin.top - margin.bottom) / rowLabels.length;
+  const colW = w / colLabels.length;
   const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
 
-  const byCounty = {};
-  counties.forEach(c => { byCounty[c] = new Array(12).fill(0); });
-  heatRows.forEach(r => { byCounty[r.CountyPrimary][r.Month - 1] = r.count; });
-
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  monthNames.forEach((m, i) => {
+  colLabels.forEach((c, i) => {
     const lbl = svgEl('text', { x: margin.left + i * colW + colW / 2, y: margin.top - 6, 'text-anchor': 'middle' });
-    lbl.textContent = m;
+    lbl.textContent = c;
     svg.appendChild(lbl);
   });
 
-  counties.forEach((county, ri) => {
-    const rowVals = byCounty[county];
+  rowLabels.forEach((row, ri) => {
+    const rowVals = matrix[ri];
     const rowMax = Math.max(1, ...rowVals);
     const y = margin.top + ri * rowH;
 
     const lbl = svgEl('text', { x: margin.left - 8, y: y + rowH / 2 + 3, 'text-anchor': 'end' });
-    lbl.textContent = county;
+    lbl.textContent = row;
     svg.appendChild(lbl);
 
-    rowVals.forEach((val, mi) => {
+    rowVals.forEach((val, ci) => {
       const opacity = val === 0 ? 0.04 : 0.12 + 0.83 * (val / rowMax);
-      const x = margin.left + mi * colW;
+      const x = margin.left + ci * colW;
       const rect = svgEl('rect', {
         x: x + 1, y: y + 1, width: colW - 2, height: rowH - 2, rx: 2,
         fill: 'var(--series-small)', 'fill-opacity': opacity.toFixed(2),
       });
       rect.style.cursor = 'pointer';
-      rect.addEventListener('mousemove', (e) => showTip(
-        `<b>${county} — ${monthNames[mi]}</b><br>${val} fire${val === 1 ? '' : 's'}`, e.clientX, e.clientY
-      ));
+      rect.addEventListener('mousemove', (e) => showTip(tooltipFn(row, colLabels[ci], val), e.clientX, e.clientY));
       rect.addEventListener('mouseleave', hideTip);
       svg.appendChild(rect);
     });
@@ -627,6 +639,16 @@ function renderHeatmap(containerId, counties, heatRows, width, height) {
 
   container.innerHTML = '';
   container.appendChild(svg);
+}
+
+function renderHeatmap(containerId, counties, heatRows, width, height) {
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const byCounty = {};
+  counties.forEach(c => { byCounty[c] = new Array(12).fill(0); });
+  heatRows.forEach(r => { byCounty[r.CountyPrimary][r.Month - 1] = r.count; });
+  const matrix = counties.map(c => byCounty[c]);
+  renderGridHeatmap(containerId, counties, monthNames, matrix, width, height,
+    (county, month, val) => `<b>${county} — ${month}</b><br>${val} fire${val === 1 ? '' : 's'}`);
 }
 
 function renderTable(containerId, headers, rows) {
@@ -686,6 +708,16 @@ function init() {
   renderTable('table-peak-month', ['County', 'Peak Month', 'Fires in peak month', '% of county total in that month'],
     DATA.peak_month.map(p => [p.CountyPrimary, p.PeakMonth, p.PeakCount, (p.PeakShare * 100).toFixed(0) + '%']));
 
+  const cov = DATA.reporting_coverage;
+  document.getElementById('destructive-desc').textContent =
+    `Structure-loss and fatality fields are only reported for a minority of fires in this dataset ` +
+    `(structures: ${(cov.structures_pct * 100).toFixed(0)}% of fires, fatalities: ${(cov.fatalities_pct * 100).toFixed(0)}%) ` +
+    `— rankings below are among fires that have a reported value, not the full dataset.`;
+  renderTable('table-destructive', ['Fire', 'County', 'Year', 'Acres', 'Structures', 'Per 1,000 ac'],
+    DATA.destructive.map(d => [d.Name, d.CountyPrimary, d.Year, fmt(d.AcresBurned), d.StructuresDestroyedNum, d.StructuresPer1000Acres.toFixed(0)]));
+  renderTable('table-deadly', ['Fire', 'County', 'Year', 'Acres', 'Fatalities'],
+    DATA.deadly.map(d => [d.Name, d.CountyPrimary, d.Year, fmt(d.AcresBurned), d.FatalitiesNum]));
+
   const points = DATA.points.map(p => ({ lat: p.lat, lon: p.lon, acres: p.acres, year: p.Year, large: p.Large, county: p.county, name: p.Name }));
   renderScatterMap('chart-map', points, 1080, 460);
   const topPoints = [...points].sort((a, b) => b.acres - a.acres).slice(0, 30);
@@ -727,6 +759,10 @@ function init() {
 
     const causes = DATA.historical.cause_breakdown;
     renderHBar('chart-cause', causes.map(c => c.cause), causes.map(c => c.count), 500, 320, 'fires');
+
+    const cd = DATA.historical.cause_by_decade;
+    renderGridHeatmap('chart-cause-decade', cd.causes, cd.decades, cd.matrix, 1080, 280,
+      (cause, decade, val) => `<b>${cause} — ${decade}</b><br>${val} fire${val === 1 ? '' : 's'}`, 140);
   }
 }
 

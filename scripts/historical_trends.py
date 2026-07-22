@@ -160,6 +160,24 @@ def main():
     for cause, count in df["CauseName"].value_counts().head(10).items():
         report.append(f"| {cause} | {count:,} |\n")
 
+    top_causes = df["CauseName"].value_counts().head(8).index.tolist()
+    decade_col = (df["Year"] // 10) * 10
+    modern = df[decade_col >= 1900].copy()
+    modern["DecadeNum"] = decade_col[decade_col >= 1900]
+    decades_list = sorted(modern["DecadeNum"].unique().tolist())
+    cause_decade_counts = (modern[modern["CauseName"].isin(top_causes)]
+                            .groupby(["CauseName", "DecadeNum"]).size())
+    cause_decade_matrix = [
+        [int(cause_decade_counts.get((cause, dec), 0)) for dec in decades_list]
+        for cause in top_causes
+    ]
+
+    report.append("\n## How causes have shifted, decade by decade\n\n")
+    report.append("| Cause | " + " | ".join(f"{int(d)}s" for d in decades_list) + " |\n")
+    report.append("|---|" + "---|" * len(decades_list) + "\n")
+    for cause, row in zip(top_causes, cause_decade_matrix):
+        report.append(f"| {cause} | " + " | ".join(str(v) for v in row) + " |\n")
+
     forecast_payload = {}
     for col, label in [("count", "Annual fire count"), ("acres", "Annual acres burned")]:
         series = model_annual[col].astype(float)
@@ -197,6 +215,12 @@ def main():
 
     REPORT_PATH.write_text("".join(report))
     logger.info("Report saved -> %s", REPORT_PATH)
+
+    forecast_payload["cause_by_decade"] = {
+        "causes": ["Unknown" if c == "Unknown/Unidentified" else c for c in top_causes],
+        "decades": [f"{int(d)}s" for d in decades_list],
+        "matrix": cause_decade_matrix,
+    }
 
     forecast_payload["decade_summary"] = [
         {"decade": f"{int(dec)}s", "count": int(row["count"]), "acres": float(row["acres"])}

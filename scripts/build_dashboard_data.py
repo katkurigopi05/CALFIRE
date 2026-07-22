@@ -98,6 +98,25 @@ def main():
     peak_month["PeakShare"] = peak_month["PeakCount"] / peak_month["TotalCount"]
     peak_month = peak_month.set_index("CountyPrimary").loc[heatmap_counties].reset_index()
 
+    # Structures/fatalities fields are only populated for a minority of fires
+    # (~10% for structures, ~1% for fatalities) — presumably only reported
+    # when nonzero/significant, not a reliable "0 means none" signal. So these
+    # rankings are restricted to fires that actually have a reported value,
+    # not the full dataset.
+    df["StructuresDestroyedNum"] = pd.to_numeric(df["StructuresDestroyed"], errors="coerce")
+    df["FatalitiesNum"] = pd.to_numeric(df["Fatalities"], errors="coerce")
+
+    destructive = df[(df["StructuresDestroyedNum"] > 0) & (df["AcresBurned"] > 0)].copy()
+    destructive["StructuresPer1000Acres"] = destructive["StructuresDestroyedNum"] / (destructive["AcresBurned"] / 1000)
+    destructive = (destructive.sort_values("StructuresPer1000Acres", ascending=False)
+                              .head(15)
+                              [["Name", "CountyPrimary", "Year", "AcresBurned", "StructuresDestroyedNum", "StructuresPer1000Acres"]])
+
+    deadly = (df[df["FatalitiesNum"] > 0]
+                .sort_values("FatalitiesNum", ascending=False)
+                .head(15)
+                [["Name", "CountyPrimary", "Year", "AcresBurned", "FatalitiesNum"]])
+
     points = df[["Latitude", "Longitude", "AcresBurned", "Year", "Large", "CountyPrimary", "Name"]].copy()
     points["AcresBurned"] = points["AcresBurned"].round(0)
     points = points.rename(columns={"Latitude": "lat", "Longitude": "lon",
@@ -122,6 +141,12 @@ def main():
         "monthly": monthly.to_dict(orient="records"),
         "heatmap": heat.to_dict(orient="records"),
         "peak_month": peak_month.to_dict(orient="records"),
+        "destructive": destructive.to_dict(orient="records"),
+        "deadly": deadly.to_dict(orient="records"),
+        "reporting_coverage": {
+            "structures_pct": float(df["StructuresDestroyedNum"].notna().mean()),
+            "fatalities_pct": float(df["FatalitiesNum"].notna().mean()),
+        },
         "points": points.to_dict(orient="records"),
         "forecast": load_optional_json(FORECAST_JSON_PATH),
         "thresholds": load_optional_json(THRESHOLD_JSON_PATH),
