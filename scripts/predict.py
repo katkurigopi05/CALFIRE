@@ -1,8 +1,10 @@
 """
-CALFIRE real-time large-fire risk tool.
+CALFIRE real-time fire-risk tool.
 
 Scores a hypothetical or upcoming fire (county + date, optionally exact
-location and weather) against the trained model in output/model_v2.pkl.
+location and weather) against every acreage threshold trained by
+scripts/threshold_analysis.py (10/50/100/500/1,000 acres), printing a full
+risk profile instead of a single yes/no call.
 
 Weather can be supplied two ways:
   1. Manually, via --temp-max/--temp-min/--precip/--wind-max/--et0/--humidity
@@ -24,14 +26,13 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
-from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import joblib
 
 ROOT = Path(__file__).parent.parent
-MODEL_PATH = ROOT / "output" / "model_v2.pkl"
+MULTI_MODEL_PATH = ROOT / "output" / "multi_threshold_models.pkl"
 
 RISK_TIERS = [
     (0.0, 0.25, "LOW"),
@@ -77,11 +78,10 @@ def main():
     parser.add_argument("--humidity", type=float, default=None, help="mean relative humidity, %%")
     args = parser.parse_args()
 
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(f"{MODEL_PATH} not found. Run scripts/train_model.py first.")
-    bundle = joblib.load(MODEL_PATH)
-    pipe = bundle["pipeline"]
-    threshold = bundle["threshold"]
+    if not MULTI_MODEL_PATH.exists():
+        raise FileNotFoundError(f"{MULTI_MODEL_PATH} not found. Run scripts/threshold_analysis.py first.")
+    bundle = joblib.load(MULTI_MODEL_PATH)
+    thresholds = bundle["thresholds"]
 
     county = args.county.strip()
     date = pd.to_datetime(args.date, utc=True)
@@ -110,37 +110,42 @@ def main():
                 weather[k] = v
 
     doy = date.dayofyear
-    row = {
+    base_row = {
         "StartYear": date.year,
         "DOY_sin": np.sin(2 * np.pi * doy / 365.25),
         "DOY_cos": np.cos(2 * np.pi * doy / 365.25),
         "StartWeekday": date.dayofweek,
         "DrySeason": int(6 <= date.month <= 10),
-        "CountyHistoricalRate": bundle["county_rate_lookup"].get(county, bundle["global_rate"]),
         "Status": "Active",
         "Latitude": lat,
         "Longitude": lon,
         **weather,
     }
-    X = pd.DataFrame([row])[bundle["numeric"] + bundle["categorical"] + bundle["geo"]]
 
-    proba = pipe.predict_proba(X)[0, 1]
-    tier = risk_tier(proba)
-    prediction = "LARGE FIRE RISK" if proba >= threshold else "likely contained (<1,000 ac)"
+    print("\n" + "=" * 66)
+    print(f"CALFIRE Risk Profile — {county} County, {args.date}")
+    print("=" * 66)
+    print(f"{'Threshold':>12} | {'Probability':>11} | {'Tier':>9} | {'Call':>26}")
+    print("-" * 66)
+
+    for t, info in sorted(thresholds.items()):
+        row = dict(base_row)
+        row["CountyHistoricalRate"] = info["county_rate_lookup"].get(county, info["global_rate"])
+        X = pd.DataFrame([row])[info["numeric"] + info["categorical"] + info["geo"]]
+        proba = info["pipeline"].predict_proba(X)[0, 1]
+        tier = risk_tier(proba)
+        call = f">= {t:,} ac" if proba >= info["threshold_cutoff"] else f"< {t:,} ac (likely)"
+        print(f"{t:>10,} ac | {proba:>10.1%} | {tier:>9} | {call:>26}")
+
+    print("-" * 66)
+    model_summary = ", ".join(f"{t}ac={info['model_name']}" for t, info in sorted(thresholds.items()))
+    print(f"Models: {model_summary}")
 
     missing_weather = [k for k, v in weather.items() if v is None]
-
-    print("\n" + "=" * 52)
-    print(f"CALFIRE Risk Assessment — {county} County, {args.date}")
-    print("=" * 52)
-    print(f"Large-fire probability : {proba:.1%}")
-    print(f"Risk tier              : {tier}")
-    print(f"Model call (@thr={threshold:.2f}) : {prediction}")
-    print(f"Model                  : {bundle['model_name']}")
     if missing_weather:
         print(f"\nNote: no data for {missing_weather} — model used imputed medians. "
               f"Supply real weather for a sharper estimate.")
-    print("=" * 52)
+    print("=" * 66)
 
 
 if __name__ == "__main__":

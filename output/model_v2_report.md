@@ -1,6 +1,6 @@
 # CALFIRE Model v2 — Results
 
-Generated: 2026-07-22 21:08:27
+Generated: 2026-07-22 21:12:30
 
 Weather features: no (weather_data.csv not found)
 

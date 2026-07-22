@@ -17,6 +17,7 @@
     --series-small:   #2a78d6;
     --series-large:   #e34948;
     --series-county:  #2a78d6;
+    --series-forecast:#eb6834;
     --status-critical:#d03b3b;
   }
   @media (prefers-color-scheme: dark) {
@@ -33,6 +34,7 @@
       --series-small:   #3987e5;
       --series-large:   #e66767;
       --series-county:  #3987e5;
+      --series-forecast:#d95926;
       --status-critical:#e66767;
     }
   }
@@ -49,6 +51,7 @@
     --series-small:   #3987e5;
     --series-large:   #e66767;
     --series-county:  #3987e5;
+    --series-forecast:#d95926;
     --status-critical:#e66767;
   }
 
@@ -127,6 +130,31 @@
           <div id="chart-yearly-acres"></div>
         </div>
       </div>
+    </div>
+
+    <div class="panel" id="panel-forecast" style="display:none">
+      <h2>12-Month Forecast</h2>
+      <p class="desc" id="forecast-desc"></p>
+      <div class="legend">
+        <span class="item"><span class="swatch" style="background:var(--series-small)"></span>Historical</span>
+        <span class="item"><span class="swatch" style="background:var(--series-forecast)"></span>Forecast (best backtest fit)</span>
+      </div>
+      <div class="grid-2">
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Monthly fire count</div>
+          <div id="chart-forecast-count"></div>
+        </div>
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Monthly acres burned</div>
+          <div id="chart-forecast-acres"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-thresholds" style="display:none">
+      <h2>Which Fire-Size Threshold Has a Learnable Pattern?</h2>
+      <p class="desc">Same model, retrained at each acreage cutoff — test ROC-AUC (0.5 = no better than chance).</p>
+      <div id="chart-thresholds"></div>
     </div>
 
     <div class="grid-2">
@@ -268,7 +296,8 @@ function renderLine(containerId, categories, values, width, height) {
     c.addEventListener('mouseleave', hideTip);
     svg.appendChild(c);
     if (i % Math.ceil(categories.length / 8) === 0 || i === categories.length - 1) {
-      const lbl = svgEl('text', { x, y: margin.top + h + 14, 'text-anchor': 'middle' });
+      const anchor = i === 0 ? 'start' : i === categories.length - 1 ? 'end' : 'middle';
+      const lbl = svgEl('text', { x, y: margin.top + h + 14, 'text-anchor': anchor });
       lbl.textContent = categories[i];
       svg.appendChild(lbl);
     }
@@ -346,6 +375,110 @@ function renderScatterMap(containerId, points, width, height) {
   container.appendChild(svg);
 }
 
+function renderForecastChart(containerId, seriesData, width, height) {
+  const { history, forecast, best_model: bestKey } = seriesData;
+  const container = document.getElementById(containerId);
+  const margin = { top: 8, right: 8, bottom: 22, left: 46 };
+  const w = width - margin.left - margin.right;
+  const h = height - margin.top - margin.bottom;
+  const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
+
+  const allDates = history.dates.concat(forecast.dates);
+  const bestVals = forecast[bestKey];
+  const lowerKey = bestKey + '_lower', upperKey = bestKey + '_upper';
+  const allVals = history.values.concat(bestVals);
+  const maxVal = Math.max(1, ...allVals, ...(forecast[upperKey] || []));
+
+  for (let g = 0; g <= 4; g++) {
+    const y = margin.top + h - (h * g / 4);
+    svg.appendChild(svgEl('line', { class: 'gridline', x1: margin.left, x2: margin.left + w, y1: y, y2: y }));
+    const t = svgEl('text', { x: margin.left - 6, y: y + 3, 'text-anchor': 'end' });
+    t.textContent = fmt(maxVal * g / 4);
+    svg.appendChild(t);
+  }
+  svg.appendChild(svgEl('line', { class: 'axis-line', x1: margin.left, x2: margin.left + w, y1: margin.top + h, y2: margin.top + h }));
+
+  const n = allDates.length;
+  const stepX = w / (n - 1);
+  const xAt = (i) => margin.left + i * stepX;
+  const yAt = (v) => margin.top + h - (v / maxVal) * h;
+
+  if (forecast[lowerKey] && forecast[upperKey]) {
+    const offset = history.dates.length;
+    const bandPts = forecast[upperKey].map((v, i) => [xAt(offset + i), yAt(v)])
+      .concat(forecast[lowerKey].map((v, i) => [xAt(offset + forecast[lowerKey].length - 1 - i), yAt(forecast[lowerKey][forecast[lowerKey].length - 1 - i])]));
+    const band = svgEl('polygon', { points: bandPts.map(p => p.join(',')).join(' '), fill: 'var(--series-forecast)', opacity: 0.15 });
+    svg.appendChild(band);
+  }
+
+  const histPts = history.values.map((v, i) => [xAt(i), yAt(v)]);
+  svg.appendChild(svgEl('path', { d: 'M' + histPts.map(p => p.join(',')).join(' L'), fill: 'none', stroke: 'var(--series-small)', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+
+  const offset = history.dates.length - 1;
+  const fcPts = [histPts[histPts.length - 1], ...bestVals.map((v, i) => [xAt(offset + 1 + i), yAt(v)])];
+  svg.appendChild(svgEl('path', { d: 'M' + fcPts.map(p => p.join(',')).join(' L'), fill: 'none', stroke: 'var(--series-forecast)', 'stroke-width': 2, 'stroke-dasharray': '4,3', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+
+  [...histPts, ...fcPts].forEach(([x, y], i) => {
+    const isForecast = i >= histPts.length;
+    const c = svgEl('circle', { cx: x, cy: y, r: 2.5, fill: isForecast ? 'var(--series-forecast)' : 'var(--series-small)' });
+    c.style.cursor = 'pointer';
+    const idx = isForecast ? i - histPts.length : i;
+    const date = isForecast ? (idx === 0 ? history.dates[history.dates.length - 1] : forecast.dates[idx - 1]) : history.dates[idx];
+    const val = isForecast ? (idx === 0 ? history.values[history.values.length - 1] : bestVals[idx - 1]) : history.values[idx];
+    c.addEventListener('mousemove', (e) => showTip(`<b>${date}</b><br>${fmt(val)}${isForecast ? ' (forecast)' : ''}`, e.clientX, e.clientY));
+    c.addEventListener('mouseleave', hideTip);
+    svg.appendChild(c);
+  });
+
+  [[0, 'start'], [Math.floor(n / 2), 'middle'], [n - 1, 'end']].forEach(([i, anchor]) => {
+    const lbl = svgEl('text', { x: xAt(i), y: margin.top + h + 14, 'text-anchor': anchor });
+    lbl.textContent = allDates[i].slice(0, 7);
+    svg.appendChild(lbl);
+  });
+
+  container.innerHTML = '';
+  container.appendChild(svg);
+}
+
+function renderThresholdBar(containerId, items, width, height) {
+  const container = document.getElementById(containerId);
+  const margin = { top: 8, right: 46, bottom: 24, left: 8 };
+  const w = width - margin.left - margin.right;
+  const barH = (height - margin.top - margin.bottom) / items.length;
+  const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
+
+  const chanceX = margin.left + 0.5 * w;
+  svg.appendChild(svgEl('line', { class: 'gridline', x1: chanceX, x2: chanceX, y1: margin.top, y2: margin.top + items.length * barH, 'stroke-dasharray': '3,3' }));
+  const chanceLbl = svgEl('text', { x: chanceX, y: margin.top + items.length * barH + 14, 'text-anchor': 'middle' });
+  chanceLbl.textContent = '0.5 (chance)';
+  svg.appendChild(chanceLbl);
+
+  items.forEach((item, i) => {
+    const y = margin.top + i * barH;
+    const bh = Math.min(20, barH * 0.6);
+    const barW = (item.test_roc_auc) * w;
+    const rect = svgEl('rect', { x: margin.left, y: y + (barH - bh) / 2, width: barW, height: bh, rx: 3, fill: 'var(--series-county)' });
+    rect.style.cursor = 'pointer';
+    rect.addEventListener('mousemove', (e) => showTip(
+      `<b>&ge; ${item.threshold.toLocaleString()} acres</b><br>${(item.large_pct * 100).toFixed(1)}% of fires<br>Test ROC-AUC: ${item.test_roc_auc.toFixed(3)}<br>Model: ${item.best_model}`,
+      e.clientX, e.clientY
+    ));
+    rect.addEventListener('mouseleave', hideTip);
+    svg.appendChild(rect);
+
+    const lbl = svgEl('text', { x: margin.left, y: y + (barH - bh) / 2 - 4, 'text-anchor': 'start' });
+    lbl.textContent = `≥ ${item.threshold.toLocaleString()} ac`;
+    svg.appendChild(lbl);
+
+    const val = svgEl('text', { class: 'value-label', x: margin.left + barW + 6, y: y + barH / 2 + 3, 'text-anchor': 'start' });
+    val.textContent = item.test_roc_auc.toFixed(3);
+    svg.appendChild(val);
+  });
+
+  container.innerHTML = '';
+  container.appendChild(svg);
+}
+
 function renderTable(containerId, headers, rows) {
   const container = document.getElementById(containerId);
   let html = '<table class="data-table"><thead><tr>';
@@ -404,6 +537,19 @@ function init() {
   const topPoints = [...points].sort((a, b) => b.acres - a.acres).slice(0, 30);
   renderTable('table-map', ['Fire', 'County', 'Year', 'Acres'],
     topPoints.map(p => [p.name || '—', p.county, p.year, fmt(p.acres)]));
+
+  if (DATA.forecast) {
+    document.getElementById('panel-forecast').style.display = '';
+    document.getElementById('forecast-desc').textContent =
+      'Backtested on the last 12 months; each series forecast forward with the model that fit its backtest best (AR, ARIMA, or Prophet).';
+    renderForecastChart('chart-forecast-count', DATA.forecast.count, 500, 220);
+    renderForecastChart('chart-forecast-acres', DATA.forecast.acres, 500, 220);
+  }
+
+  if (DATA.thresholds) {
+    document.getElementById('panel-thresholds').style.display = '';
+    renderThresholdBar('chart-thresholds', DATA.thresholds, 1080, 220);
+  }
 }
 
 init();

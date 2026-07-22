@@ -18,7 +18,16 @@ CSV_PATH = ROOT / "California_Fire_Incidents.csv"
 OUT_PATH = ROOT / "dashboard" / "data.json"
 TEMPLATE_PATH = ROOT / "dashboard" / "template.html"
 HTML_OUT_PATH = ROOT / "dashboard" / "index.html"
+FORECAST_JSON_PATH = ROOT / "dashboard" / "forecast.json"
+THRESHOLD_JSON_PATH = ROOT / "dashboard" / "threshold_summary.json"
 LARGE_FIRE_THRESHOLD_ACRES = 1000
+
+
+def load_optional_json(path):
+    if path.exists():
+        return json.loads(path.read_text())
+    print(f"Note: {path.name} not found — run its generating script to populate that dashboard panel.")
+    return None
 
 SEASON_MAP = {12: "Winter", 1: "Winter", 2: "Winter",
               3: "Spring", 4: "Spring", 5: "Spring",
@@ -83,6 +92,8 @@ def main():
         "seasonal": seasonal.to_dict(orient="records"),
         "county": county.to_dict(orient="records"),
         "points": points.to_dict(orient="records"),
+        "forecast": load_optional_json(FORECAST_JSON_PATH),
+        "thresholds": load_optional_json(THRESHOLD_JSON_PATH),
     }
 
     OUT_PATH.parent.mkdir(exist_ok=True)
