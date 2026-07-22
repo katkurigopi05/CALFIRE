@@ -1,6 +1,6 @@
 # CALFIRE Time Series Forecasting
 
-Generated: 2026-07-22 21:25:23
+Generated: 2026-07-22 22:56:02
 
 Monthly series, 2013-01-01 to 2019-11-01 (83 months). Backtested on the last 12 months, then refit on all data to forecast 12 months forward. Naive (repeat last month) and Seasonal Naive (repeat same month last year) are included as baselines — a model only earns its complexity if it beats them. Model selection below is by RMSE; MAPE is reported for reference but blows up in low-fire-activity months (small denominator), so it's not the deciding metric.
 

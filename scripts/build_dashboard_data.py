@@ -20,6 +20,7 @@ TEMPLATE_PATH = ROOT / "dashboard" / "template.html"
 HTML_OUT_PATH = ROOT / "dashboard" / "index.html"
 FORECAST_JSON_PATH = ROOT / "dashboard" / "forecast.json"
 THRESHOLD_JSON_PATH = ROOT / "dashboard" / "threshold_summary.json"
+HISTORICAL_JSON_PATH = ROOT / "dashboard" / "historical.json"
 LARGE_FIRE_THRESHOLD_ACRES = 1000
 
 
@@ -33,6 +34,9 @@ SEASON_MAP = {12: "Winter", 1: "Winter", 2: "Winter",
               3: "Spring", 4: "Spring", 5: "Spring",
               6: "Summer", 7: "Summer", 8: "Summer",
               9: "Fall", 10: "Fall", 11: "Fall"}
+MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+HEATMAP_TOP_N_COUNTIES = 15
 
 
 def main():
@@ -70,6 +74,30 @@ def main():
                 .sort_values("acres", ascending=False)
                 .head(15))
 
+    monthly = (df.groupby("Month")
+                 .agg(count=("UniqueId", "count"), acres=("AcresBurned", "sum"))
+                 .reindex(range(1, 13), fill_value=0)
+                 .reset_index())
+    monthly["MonthName"] = monthly["Month"].map(lambda m: MONTH_NAMES[m - 1])
+
+    heatmap_counties = (df.groupby("CountyPrimary")["AcresBurned"].sum()
+                          .sort_values(ascending=False).head(HEATMAP_TOP_N_COUNTIES).index.tolist())
+    heat = (df[df["CountyPrimary"].isin(heatmap_counties)]
+              .groupby(["CountyPrimary", "Month"])
+              .agg(count=("UniqueId", "count"), acres=("AcresBurned", "sum"))
+              .reindex(pd.MultiIndex.from_product([heatmap_counties, range(1, 13)],
+                                                    names=["CountyPrimary", "Month"]), fill_value=0)
+              .reset_index())
+    heat["MonthName"] = heat["Month"].map(lambda m: MONTH_NAMES[m - 1])
+
+    peak_month = (heat.loc[heat.groupby("CountyPrimary")["count"].idxmax()]
+                       [["CountyPrimary", "MonthName", "count"]]
+                       .rename(columns={"MonthName": "PeakMonth", "count": "PeakCount"}))
+    county_totals = df[df["CountyPrimary"].isin(heatmap_counties)].groupby("CountyPrimary")["UniqueId"].count()
+    peak_month = peak_month.merge(county_totals.rename("TotalCount"), on="CountyPrimary")
+    peak_month["PeakShare"] = peak_month["PeakCount"] / peak_month["TotalCount"]
+    peak_month = peak_month.set_index("CountyPrimary").loc[heatmap_counties].reset_index()
+
     points = df[["Latitude", "Longitude", "AcresBurned", "Year", "Large", "CountyPrimary", "Name"]].copy()
     points["AcresBurned"] = points["AcresBurned"].round(0)
     points = points.rename(columns={"Latitude": "lat", "Longitude": "lon",
@@ -91,9 +119,13 @@ def main():
         "yearly": yearly.to_dict(orient="records"),
         "seasonal": seasonal.to_dict(orient="records"),
         "county": county.to_dict(orient="records"),
+        "monthly": monthly.to_dict(orient="records"),
+        "heatmap": heat.to_dict(orient="records"),
+        "peak_month": peak_month.to_dict(orient="records"),
         "points": points.to_dict(orient="records"),
         "forecast": load_optional_json(FORECAST_JSON_PATH),
         "thresholds": load_optional_json(THRESHOLD_JSON_PATH),
+        "historical": load_optional_json(HISTORICAL_JSON_PATH),
     }
 
     OUT_PATH.parent.mkdir(exist_ok=True)
