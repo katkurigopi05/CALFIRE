@@ -113,6 +113,35 @@
 
     <div class="stat-row" id="stat-row"></div>
 
+    <div class="panel" id="panel-historical" style="display:none">
+      <h2>148 Years of California Wildfire History</h2>
+      <p class="desc" id="historical-desc"></p>
+      <div class="legend">
+        <span class="item"><span class="swatch" style="background:var(--series-small)"></span>Historical</span>
+        <span class="item"><span class="swatch" style="background:var(--series-forecast)"></span>Forecast (best backtest fit)</span>
+      </div>
+      <div class="grid-2">
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;" id="historical-count-label">Annual fire count</div>
+          <div id="chart-historical-count"></div>
+        </div>
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;" id="historical-acres-label">Annual acres burned</div>
+          <div id="chart-historical-acres"></div>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top:18px;">
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Acres burned by decade</div>
+          <div id="chart-decade"></div>
+        </div>
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Top recorded causes (all-time)</div>
+          <div id="chart-cause"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="panel">
       <h2>Fires Over Time</h2>
       <p class="desc">Incident count and total acres burned per year, split by small (&lt;1,000 ac) vs large (≥1,000 ac) fires.</p>
@@ -307,7 +336,8 @@ function renderLine(containerId, categories, values, width, height) {
   container.appendChild(svg);
 }
 
-function renderHBar(containerId, labels, values, width, height) {
+function renderHBar(containerId, labels, values, width, height, unit) {
+  unit = unit || 'acres';
   const container = document.getElementById(containerId);
   const margin = { top: 4, right: 46, bottom: 4, left: 110 };
   const w = width - margin.left - margin.right;
@@ -321,7 +351,7 @@ function renderHBar(containerId, labels, values, width, height) {
     const barW = (values[i] / maxVal) * w;
     const rect = svgEl('rect', { x: margin.left, y: y + (rowH - barH) / 2, width: barW, height: barH, rx: 3, fill: 'var(--series-county)' });
     rect.style.cursor = 'pointer';
-    rect.addEventListener('mousemove', (e) => showTip(`<b>${label}</b><br>${fmt(values[i])} acres`, e.clientX, e.clientY));
+    rect.addEventListener('mousemove', (e) => showTip(`<b>${label}</b><br>${fmt(values[i])} ${unit}`, e.clientX, e.clientY));
     rect.addEventListener('mouseleave', hideTip);
     svg.appendChild(rect);
 
@@ -433,6 +463,71 @@ function renderForecastChart(containerId, seriesData, width, height) {
   [[0, 'start'], [Math.floor(n / 2), 'middle'], [n - 1, 'end']].forEach(([i, anchor]) => {
     const lbl = svgEl('text', { x: xAt(i), y: margin.top + h + 14, 'text-anchor': anchor });
     lbl.textContent = allDates[i].slice(0, 7);
+    svg.appendChild(lbl);
+  });
+
+  container.innerHTML = '';
+  container.appendChild(svg);
+}
+
+function renderYearlyForecast(containerId, data, modelStartYear, width, height) {
+  const container = document.getElementById(containerId);
+  const margin = { top: 8, right: 8, bottom: 22, left: 46 };
+  const w = width - margin.left - margin.right;
+  const h = height - margin.top - margin.bottom;
+  const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
+
+  const histYears = data.full_history.years, histVals = data.full_history.values;
+  const fcYears = data.forecast.years, fcVals = data.forecast[data.best_model];
+  const allYears = histYears.concat(fcYears);
+  const maxVal = Math.max(1, ...histVals, ...fcVals);
+  const minYear = allYears[0], maxYear = allYears[allYears.length - 1];
+  const xAt = (year) => margin.left + ((year - minYear) / (maxYear - minYear)) * w;
+  const yAt = (v) => margin.top + h - (v / maxVal) * h;
+
+  for (let g = 0; g <= 4; g++) {
+    const y = margin.top + h - (h * g / 4);
+    svg.appendChild(svgEl('line', { class: 'gridline', x1: margin.left, x2: margin.left + w, y1: y, y2: y }));
+    const t = svgEl('text', { x: margin.left - 6, y: y + 3, 'text-anchor': 'end' });
+    t.textContent = fmt(maxVal * g / 4);
+    svg.appendChild(t);
+  }
+  svg.appendChild(svgEl('line', { class: 'axis-line', x1: margin.left, x2: margin.left + w, y1: margin.top + h, y2: margin.top + h }));
+
+  if (modelStartYear >= minYear && modelStartYear <= maxYear) {
+    const mx = xAt(modelStartYear);
+    svg.appendChild(svgEl('line', { x1: mx, x2: mx, y1: margin.top, y2: margin.top + h, stroke: 'var(--text-muted)', 'stroke-dasharray': '2,3', 'stroke-width': 1 }));
+    const lbl = svgEl('text', { x: mx + 4, y: margin.top + 10, 'text-anchor': 'start' });
+    lbl.textContent = modelStartYear + '+ modeled';
+    svg.appendChild(lbl);
+  }
+
+  const histPts = histYears.map((yr, i) => [xAt(yr), yAt(histVals[i])]);
+  svg.appendChild(svgEl('path', { d: 'M' + histPts.map(p => p.join(',')).join(' L'), fill: 'none', stroke: 'var(--series-small)', 'stroke-width': 1.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+
+  const fcPts = [histPts[histPts.length - 1], ...fcYears.map((yr, i) => [xAt(yr), yAt(fcVals[i])])];
+  svg.appendChild(svgEl('path', { d: 'M' + fcPts.map(p => p.join(',')).join(' L'), fill: 'none', stroke: 'var(--series-forecast)', 'stroke-width': 2, 'stroke-dasharray': '4,3', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+
+  const hitArea = svgEl('g', {});
+  histYears.forEach((yr, i) => {
+    const c = svgEl('circle', { cx: xAt(yr), cy: yAt(histVals[i]), r: 6, fill: 'transparent' });
+    c.style.cursor = 'pointer';
+    c.addEventListener('mousemove', (e) => showTip(`<b>${yr}</b><br>${fmt(histVals[i])}`, e.clientX, e.clientY));
+    c.addEventListener('mouseleave', hideTip);
+    hitArea.appendChild(c);
+  });
+  fcYears.forEach((yr, i) => {
+    const c = svgEl('circle', { cx: xAt(yr), cy: yAt(fcVals[i]), r: 4, fill: 'var(--series-forecast)' });
+    c.style.cursor = 'pointer';
+    c.addEventListener('mousemove', (e) => showTip(`<b>${yr}</b><br>${fmt(fcVals[i])} (forecast)`, e.clientX, e.clientY));
+    c.addEventListener('mouseleave', hideTip);
+    hitArea.appendChild(c);
+  });
+  svg.appendChild(hitArea);
+
+  [minYear, Math.round((minYear + maxYear) / 2), maxYear].forEach((yr) => {
+    const lbl = svgEl('text', { x: xAt(yr), y: margin.top + h + 14, 'text-anchor': 'middle' });
+    lbl.textContent = yr;
     svg.appendChild(lbl);
   });
 
@@ -554,6 +649,25 @@ function init() {
   if (DATA.thresholds) {
     document.getElementById('panel-thresholds').style.display = '';
     renderThresholdBar('chart-thresholds', DATA.thresholds, 1080, 220);
+  }
+
+  if (DATA.historical) {
+    document.getElementById('panel-historical').style.display = '';
+    const startYr = DATA.historical.model_start_year;
+    const allYears = DATA.historical.count.full_history.years;
+    document.getElementById('historical-desc').textContent =
+      `${allYears[0]}–${allYears[allYears.length - 1]} from CAL FIRE's historical fire perimeter dataset. ` +
+      `Pre-${startYr} records are sparser (per CAL FIRE's own data-quality note), so only ${startYr}+ is backtested/forecast — the rest is shown for context.`;
+    document.getElementById('historical-count-label').textContent = `Annual fire count — best fit: ${DATA.historical.count.best_model}`;
+    document.getElementById('historical-acres-label').textContent = `Annual acres burned — best fit: ${DATA.historical.acres.best_model}`;
+    renderYearlyForecast('chart-historical-count', DATA.historical.count, startYr, 500, 220);
+    renderYearlyForecast('chart-historical-acres', DATA.historical.acres, startYr, 500, 220);
+
+    const decades = DATA.historical.decade_summary;
+    renderHBar('chart-decade', decades.map(d => d.decade), decades.map(d => d.acres), 500, 320);
+
+    const causes = DATA.historical.cause_breakdown;
+    renderHBar('chart-cause', causes.map(c => c.cause), causes.map(c => c.count), 500, 320, 'fires');
   }
 }
 

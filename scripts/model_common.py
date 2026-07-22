@@ -26,8 +26,21 @@ CV_FOLDS = 5
 ROOT = Path(__file__).parent.parent
 CSV_PATH = ROOT / "California_Fire_Incidents.csv"
 WEATHER_PATH = ROOT / "weather_data.csv"
+HISTORIC_CSV_PATH = ROOT / "California_Historic_Fire_Perimeters.csv"
 
 logger = logging.getLogger("CALFIRE")
+
+# CAL FIRE FRAP standard cause codes (per the Wildland Fire Perimeters
+# metadata). Best-effort mapping — verify against the source metadata doc if
+# exact code semantics matter for a specific analysis.
+CAUSE_CODE_MAP = {
+    1: "Lightning", 2: "Equipment Use", 3: "Smoking", 4: "Campfire",
+    5: "Debris", 6: "Railroad", 7: "Arson", 8: "Playing with Fire",
+    9: "Miscellaneous", 10: "Vehicle", 11: "Power Line", 12: "Firefighter Training",
+    13: "Non-Firefighter Training", 14: "Unknown/Unidentified", 15: "Structure",
+    16: "Aircraft", 17: "Volcanic", 18: "Escaped Prescribed Burn",
+    19: "Illegal Alien Campfire",
+}
 
 
 class GeoCluster(BaseEstimator, TransformerMixin):
@@ -141,6 +154,28 @@ def load_dates_and_acres():
     cutoff = pd.Timestamp("1990-01-01", tz="UTC")
     df.loc[df["Started"] < cutoff, "Started"] = pd.NaT
     return df.dropna(subset=["Started", "AcresBurned"])
+
+
+def load_historic_perimeters():
+    """Load the 1878-2025 CAL FIRE FRAP fire perimeter dataset (no lat/lon —
+    it's polygon perimeters, not incident points; see fetch instructions in
+    README). Reliable Year/Acres for the whole span; Alarm Date is missing
+    ~23% of the time (worse in early decades), Containment Date ~54%."""
+    if not HISTORIC_CSV_PATH.exists():
+        raise FileNotFoundError(
+            f"{HISTORIC_CSV_PATH} not found. Download the 'California Fire "
+            "Perimeters (all)' CSV from CAL FIRE FRAP's historical fire "
+            "perimeter dataset and place it at the repo root."
+        )
+    df = pd.read_csv(HISTORIC_CSV_PATH, low_memory=False)
+    df["AlarmDate"] = pd.to_datetime(df["Alarm Date"], errors="coerce", format="mixed")
+    df["ContainDate"] = pd.to_datetime(df["Containment Date"], errors="coerce", format="mixed")
+    df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
+    df["Acres"] = pd.to_numeric(df["GIS Calculated Acres"], errors="coerce")
+    df["CauseName"] = df["Cause"].map(CAUSE_CODE_MAP).fillna("Unknown/Unidentified")
+    df = df.dropna(subset=["Year", "Acres"])
+    df["Year"] = df["Year"].astype(int)
+    return df
 
 
 def add_threshold_target(df, threshold_acres, alpha=SMOOTHING_ALPHA):

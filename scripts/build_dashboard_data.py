@@ -20,6 +20,7 @@ TEMPLATE_PATH = ROOT / "dashboard" / "template.html"
 HTML_OUT_PATH = ROOT / "dashboard" / "index.html"
 FORECAST_JSON_PATH = ROOT / "dashboard" / "forecast.json"
 THRESHOLD_JSON_PATH = ROOT / "dashboard" / "threshold_summary.json"
+HISTORICAL_JSON_PATH = ROOT / "dashboard" / "historical.json"
 LARGE_FIRE_THRESHOLD_ACRES = 1000
 
 
@@ -94,6 +95,7 @@ def main():
         "points": points.to_dict(orient="records"),
         "forecast": load_optional_json(FORECAST_JSON_PATH),
         "thresholds": load_optional_json(THRESHOLD_JSON_PATH),
+        "historical": load_optional_json(HISTORICAL_JSON_PATH),
     }
 
     OUT_PATH.parent.mkdir(exist_ok=True)

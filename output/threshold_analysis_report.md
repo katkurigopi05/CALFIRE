@@ -1,6 +1,6 @@
 # CALFIRE Multi-Threshold Pattern Analysis
 
-Generated: 2026-07-22 21:17:20
+Generated: 2026-07-22 22:56:00
 
 Same leak-free feature pipeline and model bake-off, run separately at each acreage cutoff, to see where the data actually carries a learnable signal for "this fire will get big."
 
