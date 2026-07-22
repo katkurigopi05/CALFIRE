@@ -161,6 +161,13 @@
       </div>
     </div>
 
+    <div class="panel">
+      <h2>When and Where Fires Peak</h2>
+      <p class="desc">Fire count by month for each of the top counties (color intensity is relative to that county's own busiest month, so smaller counties' patterns still show up).</p>
+      <div id="chart-heatmap"></div>
+      <div id="table-peak-month" style="margin-top:16px;"></div>
+    </div>
+
     <div class="panel" id="panel-forecast" style="display:none">
       <h2>12-Month Forecast</h2>
       <p class="desc" id="forecast-desc"></p>
@@ -574,6 +581,54 @@ function renderThresholdBar(containerId, items, width, height) {
   container.appendChild(svg);
 }
 
+function renderHeatmap(containerId, counties, heatRows, width, height) {
+  const container = document.getElementById(containerId);
+  const margin = { top: 20, right: 8, bottom: 4, left: 120 };
+  const w = width - margin.left - margin.right;
+  const rowH = (height - margin.top - margin.bottom) / counties.length;
+  const colW = w / 12;
+  const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
+
+  const byCounty = {};
+  counties.forEach(c => { byCounty[c] = new Array(12).fill(0); });
+  heatRows.forEach(r => { byCounty[r.CountyPrimary][r.Month - 1] = r.count; });
+
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  monthNames.forEach((m, i) => {
+    const lbl = svgEl('text', { x: margin.left + i * colW + colW / 2, y: margin.top - 6, 'text-anchor': 'middle' });
+    lbl.textContent = m;
+    svg.appendChild(lbl);
+  });
+
+  counties.forEach((county, ri) => {
+    const rowVals = byCounty[county];
+    const rowMax = Math.max(1, ...rowVals);
+    const y = margin.top + ri * rowH;
+
+    const lbl = svgEl('text', { x: margin.left - 8, y: y + rowH / 2 + 3, 'text-anchor': 'end' });
+    lbl.textContent = county;
+    svg.appendChild(lbl);
+
+    rowVals.forEach((val, mi) => {
+      const opacity = val === 0 ? 0.04 : 0.12 + 0.83 * (val / rowMax);
+      const x = margin.left + mi * colW;
+      const rect = svgEl('rect', {
+        x: x + 1, y: y + 1, width: colW - 2, height: rowH - 2, rx: 2,
+        fill: 'var(--series-small)', 'fill-opacity': opacity.toFixed(2),
+      });
+      rect.style.cursor = 'pointer';
+      rect.addEventListener('mousemove', (e) => showTip(
+        `<b>${county} — ${monthNames[mi]}</b><br>${val} fire${val === 1 ? '' : 's'}`, e.clientX, e.clientY
+      ));
+      rect.addEventListener('mouseleave', hideTip);
+      svg.appendChild(rect);
+    });
+  });
+
+  container.innerHTML = '';
+  container.appendChild(svg);
+}
+
 function renderTable(containerId, headers, rows) {
   const container = document.getElementById(containerId);
   let html = '<table class="data-table"><thead><tr>';
@@ -626,6 +681,10 @@ function init() {
   renderHBar('chart-county', countyLabels, countyVals, 480, 320);
   renderTable('table-county', ['County', 'Incidents', 'Acres burned'],
     DATA.county.map(d => [d.CountyPrimary, d.count.toLocaleString(), fmt(d.acres)]));
+
+  renderHeatmap('chart-heatmap', countyLabels, DATA.heatmap, 1080, 340);
+  renderTable('table-peak-month', ['County', 'Peak Month', 'Fires in peak month', '% of county total in that month'],
+    DATA.peak_month.map(p => [p.CountyPrimary, p.PeakMonth, p.PeakCount, (p.PeakShare * 100).toFixed(0) + '%']));
 
   const points = DATA.points.map(p => ({ lat: p.lat, lon: p.lon, acres: p.acres, year: p.Year, large: p.Large, county: p.county, name: p.Name }));
   renderScatterMap('chart-map', points, 1080, 460);
