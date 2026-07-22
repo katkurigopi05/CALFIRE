@@ -1,6 +1,6 @@
 # CALFIRE 100+ Year Historical Trend Analysis
 
-Generated: 2026-07-22 23:10:42
+Generated: 2026-07-22 23:26:01
 
 Source: CAL FIRE FRAP historical fire perimeter dataset, 1878-2025 (23,257 recorded fires). Pre-1950 records are sparser (lost records, looser collection criteria per CAL FIRE's own metadata), so modeling/backtesting uses 1950-2025 only; the full history is charted for context but not fit.
 
@@ -51,6 +51,36 @@ Source: CAL FIRE FRAP historical fire perimeter dataset, 1878-2025 (23,257 recor
 | Debris | 0 | 43 | 67 | 71 | 23 | 25 | 24 | 48 | 67 | 68 | 139 | 124 | 107 |
 | Vehicle | 0 | 0 | 0 | 1 | 0 | 0 | 4 | 0 | 6 | 40 | 158 | 211 | 219 |
 | Power Line | 0 | 0 | 0 | 0 | 0 | 2 | 2 | 2 | 8 | 73 | 128 | 161 | 130 |
+
+## CAL FIRE unit / region breakdown
+
+Only covers CAL FIRE's own jurisdiction (46% of fires) — the rest are on federal land (USFS/NPS/BLM), grouped as "Federal/Other Agency" since this lookup has no unit codes for those.
+
+| Region | Fires | Total acres |
+|---|---|---|
+| Federal/Other Agency | 12,648 | 27,324,277 |
+| Southern | 7,445 | 9,257,753 |
+| Northern | 3,164 | 8,035,657 |
+
+### Top CAL FIRE units by acres burned
+
+| Unit | Fires | Total acres |
+|---|---|---|
+| Sonoma-Lake Napa Unit | 635 | 2,325,932 |
+| Los Angeles Unit | 2,034 | 2,177,460 |
+| Butte Unit | 239 | 1,873,478 |
+| Riverside Unit | 892 | 1,452,406 |
+| Ventura County | 441 | 1,234,453 |
+| San Benito-Monterey Unit | 399 | 869,935 |
+| Tehama-Glenn Unit | 299 | 834,357 |
+| Santa Clara Unit | 310 | 813,339 |
+| Shasta-Trinity Unit | 284 | 670,099 |
+| Madera-Mariposa-Merced Unit | 343 | 507,210 |
+| Kern County | 814 | 496,762 |
+| Mendocino Unit | 362 | 490,699 |
+| San Luis Obispo Unit | 515 | 447,672 |
+| San Bernardino Unit | 255 | 403,655 |
+| Fresno-Kings Unit | 367 | 393,753 |
 
 ## Annual fire count (1950-2025)
 

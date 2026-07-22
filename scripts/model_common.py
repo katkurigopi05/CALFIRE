@@ -27,6 +27,7 @@ ROOT = Path(__file__).parent.parent
 CSV_PATH = ROOT / "California_Fire_Incidents.csv"
 WEATHER_PATH = ROOT / "weather_data.csv"
 HISTORIC_CSV_PATH = ROOT / "California_Historic_Fire_Perimeters.csv"
+UNITS_CSV_PATH = ROOT / "CALFIRE_Administrative_Units.csv"
 
 logger = logging.getLogger("CALFIRE")
 
@@ -175,6 +176,27 @@ def load_historic_perimeters():
     df["CauseName"] = df["Cause"].map(CAUSE_CODE_MAP).fillna("Unknown/Unidentified")
     df = df.dropna(subset=["Year", "Acres"])
     df["Year"] = df["Year"].astype(int)
+    return df
+
+
+def add_calfire_unit_labels(df, unit_col="Unit ID"):
+    """Label each fire with its CAL FIRE unit name + Northern/Southern region,
+    using CALFIRE_Administrative_Units.csv. Only covers CAL FIRE's own
+    jurisdiction (state responsibility areas) — roughly 46% of fires in the
+    historical dataset are on federal land (USFS/NPS/BLM) with different unit
+    codes this lookup doesn't have, so those are explicitly labeled
+    "Federal/Other Agency" rather than silently dropped or mis-mapped."""
+    df = df.copy()
+    if not UNITS_CSV_PATH.exists():
+        df["CalFireUnitName"] = "Unknown"
+        df["CalFireRegion"] = "Unknown"
+        return df
+    units = pd.read_csv(UNITS_CSV_PATH)
+    code_to_name = dict(zip(units["Unit Code"], units["Unit"]))
+    code_to_region = dict(zip(units["Unit Code"], units["Region"]))
+    df["CalFireUnitName"] = df[unit_col].map(code_to_name)
+    df["CalFireRegion"] = df[unit_col].map(code_to_region).fillna("Federal/Other Agency")
+    df.loc[df["CalFireUnitName"].isna(), "CalFireUnitName"] = "Federal/Other Agency"
     return df
 
 

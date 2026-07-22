@@ -11,6 +11,7 @@ acres burned).
 
 - `California_Fire_Incidents.csv` — CAL FIRE historical incident data (2013-2019), with lat/lon per fire
 - `California_Historic_Fire_Perimeters.csv` — CAL FIRE FRAP historical fire perimeter dataset, 1878-2025 (23k+ fires). No lat/lon (it's polygon perimeters, not point incidents), but reliable Year/Alarm Date/Acres/Cause going back over a century. Downloaded from CNRA's ArcGIS Hub (`gis.data.cnra.ca.gov`) — "California Historical Fire Perimeters" → "California Fire Perimeters (all)" → Download → CSV.
+- `CALFIRE_Administrative_Units.csv` — the 27 CAL FIRE administrative units (name, code, Northern/Southern region), from the same Hub's "CAL FIRE Administrative Units" dataset. Only covers CAL FIRE's own jurisdiction — ~46% of fires in the historical dataset are on federal land (USFS/NPS/BLM) with different unit codes this doesn't have, so those are labeled "Federal/Other Agency" rather than guessed at.
 - `CALFIRE(RF) RN7945.ipynb` — original notebook
 - `CALFIRE_improved.py` — first-pass leak-free baseline (see `CODE_REVIEW.md`)
 - `scripts/model_common.py` — shared feature/data-loading helpers (geo cleaning, county history rate, geo clustering, the model bake-off)
@@ -77,6 +78,13 @@ and Equipment-caused fires show a similar rise — consistent with aging grid
 infrastructure and development pushing further into wildland, not just more
 fires overall (Lightning, the natural-cause baseline, stays comparatively
 flat).
+
+`CALFIRE_Administrative_Units.csv` lets us label the historical dataset's
+`Unit ID` field with real unit names and Northern/Southern region — but only
+for the 46% of fires on CAL FIRE-managed land; the rest (federal land) are
+explicitly labeled "Federal/Other Agency" rather than mis-mapped. Within
+CAL FIRE's own jurisdiction, Southern units have burned somewhat more total
+acreage than Northern (9.3M vs 8.0M acres) across the full 148 years.
 
 ## Where and when fires peak, and destructiveness beyond acreage
 

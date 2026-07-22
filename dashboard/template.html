@@ -144,6 +144,16 @@
         <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">How causes have shifted, decade by decade (fire count, color relative to each cause's own busiest decade)</div>
         <div id="chart-cause-decade"></div>
       </div>
+      <div class="grid-2" style="margin-top:18px;">
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;" id="region-label">Fires by CAL FIRE region</div>
+          <div id="chart-region"></div>
+        </div>
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Top CAL FIRE units by acres burned (excludes federal land)</div>
+          <div id="chart-calfire-units"></div>
+        </div>
+      </div>
     </div>
 
     <div class="panel">
@@ -362,10 +372,10 @@ function renderLine(containerId, categories, values, width, height) {
   container.appendChild(svg);
 }
 
-function renderHBar(containerId, labels, values, width, height, unit) {
+function renderHBar(containerId, labels, values, width, height, unit, leftMargin) {
   unit = unit || 'acres';
   const container = document.getElementById(containerId);
-  const margin = { top: 4, right: 46, bottom: 4, left: 110 };
+  const margin = { top: 4, right: 46, bottom: 4, left: leftMargin || 110 };
   const w = width - margin.left - margin.right;
   const rowH = (height - margin.top - margin.bottom) / labels.length;
   const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
@@ -763,6 +773,14 @@ function init() {
     const cd = DATA.historical.cause_by_decade;
     renderGridHeatmap('chart-cause-decade', cd.causes, cd.decades, cd.matrix, 1080, 280,
       (cause, decade, val) => `<b>${cause} — ${decade}</b><br>${val} fire${val === 1 ? '' : 's'}`, 140);
+
+    document.getElementById('region-label').textContent =
+      `Fires by CAL FIRE region (only ${(DATA.historical.calfire_coverage_pct * 100).toFixed(0)}% of fires are on CAL FIRE-managed land — rest is federal)`;
+    const regions = DATA.historical.region_breakdown;
+    renderHBar('chart-region', regions.map(r => r.region), regions.map(r => r.count), 500, 140, 'fires', 160);
+
+    const cfUnits = DATA.historical.calfire_units;
+    renderHBar('chart-calfire-units', cfUnits.map(u => u.unit), cfUnits.map(u => u.acres), 500, 320, 'acres', 170);
   }
 }
 

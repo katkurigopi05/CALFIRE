@@ -33,7 +33,7 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-from model_common import load_historic_perimeters
+from model_common import load_historic_perimeters, add_calfire_unit_labels
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s | %(message)s")
@@ -132,6 +132,7 @@ def forecast_forward(series, label):
 
 def main():
     df = load_historic_perimeters()
+    df = add_calfire_unit_labels(df)
     logger.info("Loaded %d fires, %d-%d", len(df), df["Year"].min(), df["Year"].max())
 
     full_annual = build_annual_series(df)
@@ -178,6 +179,31 @@ def main():
     for cause, row in zip(top_causes, cause_decade_matrix):
         report.append(f"| {cause} | " + " | ".join(str(v) for v in row) + " |\n")
 
+    # Region/unit breakdown only covers CAL FIRE's own jurisdiction (state
+    # responsibility areas) — federal land (USFS/NPS/BLM) fires use different
+    # unit codes this lookup doesn't have, so they're grouped as their own
+    # explicit category rather than mis-labeled or silently dropped.
+    region_counts = df.groupby("CalFireRegion").agg(count=("Acres", "count"), acres=("Acres", "sum"))
+    calfire_mapped_pct = 1 - (region_counts.loc["Federal/Other Agency", "count"] / len(df)
+                              if "Federal/Other Agency" in region_counts.index else 0)
+    report.append(
+        f"\n## CAL FIRE unit / region breakdown\n\n"
+        f"Only covers CAL FIRE's own jurisdiction ({calfire_mapped_pct*100:.0f}% of fires) — "
+        f"the rest are on federal land (USFS/NPS/BLM), grouped as \"Federal/Other Agency\" "
+        f"since this lookup has no unit codes for those.\n\n"
+        "| Region | Fires | Total acres |\n|---|---|---|\n"
+    )
+    for region, row in region_counts.sort_values("count", ascending=False).iterrows():
+        report.append(f"| {region} | {int(row['count']):,} | {row['acres']:,.0f} |\n")
+
+    calfire_units = (df[df["CalFireRegion"] != "Federal/Other Agency"]
+                        .groupby("CalFireUnitName")
+                        .agg(count=("Acres", "count"), acres=("Acres", "sum"))
+                        .sort_values("acres", ascending=False).head(15))
+    report.append("\n### Top CAL FIRE units by acres burned\n\n| Unit | Fires | Total acres |\n|---|---|---|\n")
+    for unit, row in calfire_units.iterrows():
+        report.append(f"| {unit} | {int(row['count']):,} | {row['acres']:,.0f} |\n")
+
     forecast_payload = {}
     for col, label in [("count", "Annual fire count"), ("acres", "Annual acres burned")]:
         series = model_annual[col].astype(float)
@@ -221,6 +247,16 @@ def main():
         "decades": [f"{int(d)}s" for d in decades_list],
         "matrix": cause_decade_matrix,
     }
+
+    forecast_payload["calfire_coverage_pct"] = float(calfire_mapped_pct)
+    forecast_payload["region_breakdown"] = [
+        {"region": region, "count": int(row["count"]), "acres": float(row["acres"])}
+        for region, row in region_counts.sort_values("count", ascending=False).iterrows()
+    ]
+    forecast_payload["calfire_units"] = [
+        {"unit": unit, "count": int(row["count"]), "acres": float(row["acres"])}
+        for unit, row in calfire_units.iterrows()
+    ]
 
     forecast_payload["decade_summary"] = [
         {"decade": f"{int(dec)}s", "count": int(row["count"]), "acres": float(row["acres"])}
