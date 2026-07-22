@@ -6,6 +6,12 @@ fits three forecasting models to each, so we can read off seasonality (CA's
 annual fire season) and compare which model actually predicts held-out months
 best before trusting any forward forecast.
 
+Naive and Seasonal Naive are included as baselines that AR/ARIMA/Prophet must
+actually beat — a fancier model that loses to "repeat last month" or "repeat
+the same month last year" isn't earning its complexity (methodology follows
+the accuracy-comparison structure used in a companion time-series project:
+github.com/katkurigopi05/Time-Series).
+
 Usage: python scripts/timeseries_analysis.py
 """
 import json
@@ -49,6 +55,15 @@ def build_monthly_series():
     return monthly
 
 
+def fit_naive(train, steps):
+    return np.full(steps, train.iloc[-1])
+
+
+def fit_seasonal_naive(train, steps, period=SEASONAL_PERIOD):
+    last_cycle = train.iloc[-period:].values
+    return np.array([last_cycle[i % period] for i in range(steps)])
+
+
 def fit_ar(train, steps):
     model = AutoReg(train, lags=SEASONAL_PERIOD).fit()
     return model.predict(start=len(train), end=len(train) + steps - 1)
@@ -74,36 +89,49 @@ def fit_prophet(train_series, steps):
     return fc.tail(steps)
 
 
+def safe_mape(actual, pred):
+    """Mean absolute percentage error, computed only over months with a
+    nonzero actual (MAPE is undefined at zero and fire count/acres both hit
+    zero some months)."""
+    actual, pred = np.asarray(actual), np.asarray(pred)
+    mask = actual != 0
+    if not mask.any():
+        return float("nan")
+    return float(np.mean(np.abs((actual[mask] - pred[mask]) / actual[mask])) * 100)
+
+
 def backtest_series(series, name):
     train, test = series.iloc[:-BACKTEST_MONTHS], series.iloc[-BACKTEST_MONTHS:]
-    results = {}
-
-    ar_pred = fit_ar(train, BACKTEST_MONTHS)
-    results["AR"] = np.asarray(ar_pred)
-
-    sarimax_pred, _ = fit_sarimax(train, BACKTEST_MONTHS)
-    results["ARIMA"] = np.asarray(sarimax_pred)
-
-    prophet_pred = fit_prophet(train, BACKTEST_MONTHS)
-    results["Prophet"] = prophet_pred["yhat"].values
+    results = {
+        "Naive": fit_naive(train, BACKTEST_MONTHS),
+        "SeasonalNaive": fit_seasonal_naive(train, BACKTEST_MONTHS),
+        "AR": np.asarray(fit_ar(train, BACKTEST_MONTHS)),
+        "ARIMA": np.asarray(fit_sarimax(train, BACKTEST_MONTHS)[0]),
+        "Prophet": fit_prophet(train, BACKTEST_MONTHS)["yhat"].values,
+    }
 
     scores = {}
     for model_name, pred in results.items():
         pred = np.clip(pred, 0, None)
         mae = mean_absolute_error(test.values, pred)
         rmse = np.sqrt(mean_squared_error(test.values, pred))
-        scores[model_name] = {"mae": mae, "rmse": rmse}
-        logger.info("[%s] %-8s backtest MAE=%.2f RMSE=%.2f", name, model_name, mae, rmse)
+        mape = safe_mape(test.values, pred)
+        scores[model_name] = {"mae": mae, "rmse": rmse, "mape": mape}
+        logger.info("[%s] %-13s backtest MAE=%.2f RMSE=%.2f MAPE=%.1f%%", name, model_name, mae, rmse, mape)
 
     return scores
 
 
 def forecast_series(series, name):
-    """Refit each model on the FULL series and forecast forward."""
+    """Refit each model (including the naive baselines) on the FULL series
+    and forecast forward, so whichever model wins the backtest can be looked
+    up by name for the dashboard."""
     ar_pred = np.clip(fit_ar(series, FORECAST_MONTHS), 0, None)
     sarimax_pred, sarimax_ci = fit_sarimax(series, FORECAST_MONTHS)
     sarimax_pred = np.clip(sarimax_pred, 0, None)
     prophet_fc = fit_prophet(series, FORECAST_MONTHS)
+    naive_pred = np.clip(fit_naive(series, FORECAST_MONTHS), 0, None)
+    seasonal_naive_pred = np.clip(fit_seasonal_naive(series, FORECAST_MONTHS), 0, None)
 
     future_dates = pd.date_range(series.index[-1] + pd.offsets.MonthBegin(1), periods=FORECAST_MONTHS, freq="MS")
 
@@ -111,6 +139,8 @@ def forecast_series(series, name):
         "history": {"dates": [d.strftime("%Y-%m-%d") for d in series.index], "values": series.values.tolist()},
         "forecast": {
             "dates": [d.strftime("%Y-%m-%d") for d in future_dates],
+            "Naive": naive_pred.tolist(),
+            "SeasonalNaive": seasonal_naive_pred.tolist(),
             "AR": ar_pred.tolist(),
             "ARIMA": sarimax_pred.tolist(),
             "ARIMA_lower": np.clip(sarimax_ci.iloc[:, 0].values, 0, None).tolist(),
@@ -131,7 +161,12 @@ def main():
         f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n",
         f"Monthly series, {monthly.index.min().date()} to {monthly.index.max().date()} "
         f"({len(monthly)} months). Backtested on the last {BACKTEST_MONTHS} months, "
-        f"then refit on all data to forecast {FORECAST_MONTHS} months forward.\n\n",
+        f"then refit on all data to forecast {FORECAST_MONTHS} months forward. "
+        f"Naive (repeat last month) and Seasonal Naive (repeat same month last "
+        f"year) are included as baselines — a model only earns its complexity "
+        f"if it beats them. Model selection below is by RMSE; MAPE is reported "
+        f"for reference but blows up in low-fire-activity months (small "
+        f"denominator), so it's not the deciding metric.\n\n",
     ]
 
     forecast_payload = {}
@@ -147,12 +182,22 @@ def main():
                 "acreage forecast.\n\n"
             )
         scores = backtest_series(series, label)
-        report.append("| Model | Backtest MAE | Backtest RMSE |\n|---|---|---|\n")
+        report.append("| Model | Backtest MAE | Backtest RMSE | Backtest MAPE |\n|---|---|---|---|\n")
         best_model = min(scores, key=lambda k: scores[k]["rmse"])
         for model_name, s in sorted(scores.items(), key=lambda kv: kv[1]["rmse"]):
             marker = " **(best)**" if model_name == best_model else ""
-            report.append(f"| {model_name}{marker} | {s['mae']:.1f} | {s['rmse']:.1f} |\n")
-        report.append(f"\nBest backtest fit: **{best_model}**\n\n")
+            mape_str = f"{s['mape']:.1f}%" if not np.isnan(s["mape"]) else "n/a"
+            report.append(f"| {model_name}{marker} | {s['mae']:.1f} | {s['rmse']:.1f} | {mape_str} |\n")
+        report.append(f"\nBest backtest fit: **{best_model}**")
+        if best_model in ("Naive", "SeasonalNaive"):
+            report.append(
+                " — none of AR/ARIMA/Prophet beat this naive baseline here, "
+                "so the honest takeaway is \"last month\"/\"same month last "
+                "year\" is as good a forecast as anything fancier.\n\n"
+            )
+        else:
+            naive_rmse = min(scores["Naive"]["rmse"], scores["SeasonalNaive"]["rmse"])
+            report.append(f" — beats the best naive baseline (RMSE {naive_rmse:.1f}).\n\n")
 
         forecast_payload[col] = forecast_series(series, label)
         forecast_payload[col]["best_model"] = best_model

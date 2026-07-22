@@ -141,11 +141,11 @@
       </div>
       <div class="grid-2">
         <div>
-          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Monthly fire count</div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;" id="forecast-count-label">Monthly fire count</div>
           <div id="chart-forecast-count"></div>
         </div>
         <div>
-          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Monthly acres burned</div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;" id="forecast-acres-label">Monthly acres burned</div>
           <div id="chart-forecast-acres"></div>
         </div>
       </div>
@@ -541,7 +541,12 @@ function init() {
   if (DATA.forecast) {
     document.getElementById('panel-forecast').style.display = '';
     document.getElementById('forecast-desc').textContent =
-      'Backtested on the last 12 months; each series forecast forward with the model that fit its backtest best (AR, ARIMA, or Prophet).';
+      'Backtested against Naive and Seasonal Naive baselines on the last 12 months; each series forecast forward with whichever model actually won that backtest (by RMSE).';
+    const naiveNote = (m) => (m === 'Naive' || m === 'SeasonalNaive')
+      ? ` — ${m} won: fancier models (AR/ARIMA/Prophet) didn't beat it here`
+      : ` — best fit: ${m}`;
+    document.getElementById('forecast-count-label').textContent = 'Monthly fire count' + naiveNote(DATA.forecast.count.best_model);
+    document.getElementById('forecast-acres-label').textContent = 'Monthly acres burned' + naiveNote(DATA.forecast.acres.best_model);
     renderForecastChart('chart-forecast-count', DATA.forecast.count, 500, 220);
     renderForecastChart('chart-forecast-acres', DATA.forecast.acres, 500, 220);
   }
