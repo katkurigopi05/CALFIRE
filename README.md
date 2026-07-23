@@ -40,22 +40,30 @@ python scripts/train_model.py     # picks up weather_data.csv automatically
 ```bash
 pip install -r requirements.txt
 
+python scripts/run_pipeline.py           # runs everything below, in order, stops on first failure
+python scripts/predict.py --county Riverside --date 2026-08-15
+```
+
+`run_pipeline.py` is just the five steps below run in sequence, for
+convenience — run them individually instead if you only need one:
+
+```bash
 python scripts/train_model.py            # flagship >=1,000 ac model
 python scripts/threshold_analysis.py     # multi-threshold pattern analysis + risk-profile models
 python scripts/timeseries_analysis.py    # AR / ARIMA / Prophet forecasts (2013-2019, monthly)
 python scripts/historical_trends.py      # 1878-2025 annual trend analysis + forecast
 python scripts/build_dashboard_data.py   # regenerates dashboard/index.html from all of the above
-
-python scripts/predict.py --county Riverside --date 2026-08-15
 ```
 
 ## CI
 
-`.github/workflows/pipeline.yml` runs the full pipeline above (every script
-except `fetch_weather.py`, which needs live internet access) on every push
-and PR to `main`, so a change that breaks any script gets caught
-automatically instead of only being noticed the next time someone runs it
-by hand.
+`.github/workflows/pipeline.yml` runs the same five steps as
+`run_pipeline.py` (every script except `fetch_weather.py`, which needs live
+internet access) on every push and PR to `main`, as separate steps rather
+than one call to `run_pipeline.py` so a failure points at the exact script
+that broke instead of just "the pipeline." A change that breaks any script
+gets caught automatically instead of only being noticed the next time
+someone runs it by hand.
 
 ## What the multi-threshold analysis found
 
