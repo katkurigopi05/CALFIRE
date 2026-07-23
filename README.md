@@ -11,12 +11,13 @@ acres burned).
 
 - `California_Fire_Incidents.csv` — CAL FIRE historical incident data (2013-2019), with lat/lon per fire
 - `California_Historic_Fire_Perimeters.csv` — CAL FIRE FRAP historical fire perimeter dataset, 1878-2025 (23k+ fires). No lat/lon (it's polygon perimeters, not point incidents), but reliable Year/Alarm Date/Acres/Cause going back over a century. Downloaded from CNRA's ArcGIS Hub (`gis.data.cnra.ca.gov`) — "California Historical Fire Perimeters" → "California Fire Perimeters (all)" → Download → CSV.
+- `CALFIRE_Administrative_Units.csv` — the 27 CAL FIRE administrative units (name, code, Northern/Southern region), from the same Hub's "CAL FIRE Administrative Units" dataset. Only covers CAL FIRE's own jurisdiction — ~46% of fires in the historical dataset are on federal land (USFS/NPS/BLM) with different unit codes this doesn't have, so those are labeled "Federal/Other Agency" rather than guessed at.
 - `CALFIRE(RF) RN7945.ipynb` — original notebook
 - `CALFIRE_improved.py` — first-pass leak-free baseline (see `CODE_REVIEW.md`)
 - `scripts/model_common.py` — shared feature/data-loading helpers (geo cleaning, county history rate, geo clustering, the model bake-off)
 - `scripts/train_model.py` — flagship single-threshold model (≥1,000 ac): cyclical date encoding, dry-season flag, leak-free county fire-history rate, geo clustering, optional weather features, RandomForest/HistGradientBoosting/LogisticRegression bake-off. Run: `python scripts/train_model.py`
 - `scripts/threshold_analysis.py` — runs the same pipeline at 10/50/100/500/1,000 acres to see which "large fire" definitions the data actually has a learnable pattern for (see `output/threshold_analysis_report.md`). Powers `predict.py`'s full risk profile and the dashboard's threshold chart.
-- `scripts/timeseries_analysis.py` — aggregates incidents into monthly series (count, acres burned) and forecasts with Naive, Seasonal Naive, AR, ARIMA (SARIMAX), and Prophet, picking whichever backtests best (see `output/timeseries_report.md`). Feeds the dashboard's 12-month forecast panel.
+- `scripts/timeseries_analysis.py` — aggregates incidents into monthly series (count, acres burned) and forecasts with Naive, Seasonal Naive, a trend+season regression (tslm-style, per the companion Time-Series repo's methodology), AR, ARIMA (SARIMAX), and Prophet, picking whichever backtests best (see `output/timeseries_report.md`). Feeds the dashboard's 12-month forecast panel. TrendSeason currently wins both series — it beats AR on fire count and turns the acres-burned series from a "toss-up vs Naive" into a real, beaten-baseline forecast.
 - `scripts/historical_trends.py` — long-run annual trend analysis on `California_Historic_Fire_Perimeters.csv` (1878-2025). Backtests Naive, Linear/Quadratic Trend regression, ETS, and ARIMA on the 1950+ window (CAL FIRE's own cutoff for more-reliable collection), forecasts 10 years forward, and reports decade/cause breakdowns (see `output/historical_trends_report.md`). Feeds the dashboard's "148 Years of California Wildfire History" panel.
 - `scripts/fetch_weather.py` — pulls historical daily weather (temp/precip/wind/ET0/humidity) per incident from the free Open-Meteo Archive API. **Must be run somewhere with open internet access** — writes `weather_data.csv`, which `train_model.py` and `threshold_analysis.py` pick up automatically if present.
 - `scripts/predict.py` — CLI risk tool: given a county + date (and optionally weather or `--fetch-weather`), prints large-fire probability at every threshold from `threshold_analysis.py`.
@@ -54,7 +55,9 @@ Re-running the same model at 10/50/100/500/1,000 acres shows the "large fire"
 line matters: at 10 acres, 98% of recorded incidents already qualify (CAL
 FIRE's public dataset mostly logs already-notable fires), so there's no real
 minority class to learn from. Signal strengthens steadily from there — test
-ROC-AUC goes from ~0.62 at 10 acres up to ~0.72 at 1,000 acres. See
+ROC-AUC goes from ~0.62 at 10 acres up to ~0.72 at 1,000 acres — filling in
+the gap with 75/150/200/300/750-acre cutoffs shows this is a steady climb
+across the whole 50-1,000 range, not one sharp inflection point. See
 `output/threshold_analysis_report.md` for the full breakdown.
 
 ## What 148 years of data shows
@@ -70,3 +73,30 @@ better than Naive and the metrics disagree on the ranking, so treat that one
 as a toss-up rather than a real forecast. See
 `output/historical_trends_report.md` for the full breakdown, including
 decade and fire-cause tables.
+
+Breaking causes down by decade shows a real shift: **Power Line-caused
+fires went from essentially 0 before 1950 to 161 in the 2010s**, and Vehicle-
+and Equipment-caused fires show a similar rise — consistent with aging grid
+infrastructure and development pushing further into wildland, not just more
+fires overall (Lightning, the natural-cause baseline, stays comparatively
+flat).
+
+`CALFIRE_Administrative_Units.csv` lets us label the historical dataset's
+`Unit ID` field with real unit names and Northern/Southern region — but only
+for the 46% of fires on CAL FIRE-managed land; the rest (federal land) are
+explicitly labeled "Federal/Other Agency" rather than mis-mapped. Within
+CAL FIRE's own jurisdiction, Southern units have burned somewhat more total
+acreage than Northern (9.3M vs 8.0M acres) across the full 148 years.
+
+## Where and when fires peak, and destructiveness beyond acreage
+
+The dashboard's month × county heatmap (from the 2013-2019 point dataset)
+shows most counties peak in the Jun-Aug dry season, but a few — Ventura,
+Napa, Sonoma — peak in Oct/Nov instead, consistent with wind-driven fall
+fire season (Santa Ana/Diablo winds) rather than pure dryness.
+
+Acreage alone doesn't capture destructiveness: the dashboard also ranks
+fires by structures destroyed per 1,000 acres (small-footprint fires that
+hit dense areas hard) and by fatalities. Note the structures/fatalities
+fields are only populated for ~11%/~1% of fires respectively — treat these
+as "worst known cases," not a complete accounting.

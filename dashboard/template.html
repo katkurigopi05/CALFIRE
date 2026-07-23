@@ -140,6 +140,21 @@
           <div id="chart-cause"></div>
         </div>
       </div>
+      <div style="margin-top:18px;">
+        <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">How causes have shifted, decade by decade (fire count, color relative to each cause's own busiest decade)</div>
+        <div id="chart-cause-decade"></div>
+        <div id="scale-cause-decade"></div>
+      </div>
+      <div class="grid-2" style="margin-top:18px;">
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;" id="region-label">Fires by CAL FIRE region</div>
+          <div id="chart-region"></div>
+        </div>
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Top CAL FIRE units by acres burned (excludes federal land)</div>
+          <div id="chart-calfire-units"></div>
+        </div>
+      </div>
     </div>
 
     <div class="panel">
@@ -165,7 +180,23 @@
       <h2>When and Where Fires Peak</h2>
       <p class="desc">Fire count by month for each of the top counties (color intensity is relative to that county's own busiest month, so smaller counties' patterns still show up).</p>
       <div id="chart-heatmap"></div>
+      <div id="scale-heatmap"></div>
       <div id="table-peak-month" style="margin-top:16px;"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Destructiveness — Not Just Acreage</h2>
+      <p class="desc" id="destructive-desc"></p>
+      <div class="grid-2">
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Most destructive relative to size (structures destroyed per 1,000 acres)</div>
+          <div id="table-destructive"></div>
+        </div>
+        <div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;">Deadliest fires</div>
+          <div id="table-deadly"></div>
+        </div>
+      </div>
     </div>
 
     <div class="panel" id="panel-forecast" style="display:none">
@@ -343,10 +374,10 @@ function renderLine(containerId, categories, values, width, height) {
   container.appendChild(svg);
 }
 
-function renderHBar(containerId, labels, values, width, height, unit) {
+function renderHBar(containerId, labels, values, width, height, unit, leftMargin) {
   unit = unit || 'acres';
   const container = document.getElementById(containerId);
-  const margin = { top: 4, right: 46, bottom: 4, left: 110 };
+  const margin = { top: 4, right: 46, bottom: 4, left: leftMargin || 110 };
   const w = width - margin.left - margin.right;
   const rowH = (height - margin.top - margin.bottom) / labels.length;
   const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
@@ -581,45 +612,88 @@ function renderThresholdBar(containerId, items, width, height) {
   container.appendChild(svg);
 }
 
-function renderHeatmap(containerId, counties, heatRows, width, height) {
+// "Weather map" thermal scale (cool -> hot), ColorBrewer RdYlBu reversed.
+// A deliberate exception to the usual single-hue sequential rule: this is
+// the standard, widely-recognized convention for heat/intensity maps
+// (temperature, radar), which is exactly the look being asked for here.
+// Because a multi-hue ramp can't carry magnitude by hue alone, every cell
+// keeps its exact-value tooltip and each chart ships a labeled scale bar,
+// so nothing depends on color-matching alone.
+const WEATHER_STOPS = [
+  [0.00, '#313695'], [0.10, '#4575b4'], [0.20, '#74add1'], [0.30, '#abd9e9'],
+  [0.40, '#e0f3f8'], [0.50, '#ffffbf'], [0.60, '#fee090'], [0.70, '#fdae61'],
+  [0.80, '#f46d43'], [0.90, '#d73027'], [1.00, '#a50026'],
+];
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function weatherColor(t) {
+  t = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < WEATHER_STOPS.length - 1; i++) {
+    const [t0, c0] = WEATHER_STOPS[i], [t1, c1] = WEATHER_STOPS[i + 1];
+    if (t >= t0 && t <= t1) {
+      const f = (t - t0) / (t1 - t0);
+      const [r0, g0, b0] = hexToRgb(c0), [r1, g1, b1] = hexToRgb(c1);
+      const r = Math.round(r0 + (r1 - r0) * f), g = Math.round(g0 + (g1 - g0) * f), b = Math.round(b0 + (b1 - b0) * f);
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  return WEATHER_STOPS[WEATHER_STOPS.length - 1][1];
+}
+function renderWeatherScaleBar(containerId, width) {
   const container = document.getElementById(containerId);
-  const margin = { top: 20, right: 8, bottom: 4, left: 120 };
+  const height = 34;
+  const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
+  const barW = width - 70, barX = 35, barY = 4, barH = 10;
+  const steps = 60;
+  for (let i = 0; i < steps; i++) {
+    svg.appendChild(svgEl('rect', {
+      x: barX + (i / steps) * barW, y: barY, width: barW / steps + 0.5, height: barH,
+      fill: weatherColor(i / (steps - 1)),
+    }));
+  }
+  const low = svgEl('text', { x: barX - 4, y: barY + barH / 2 + 3, 'text-anchor': 'end' });
+  low.textContent = 'Low';
+  svg.appendChild(low);
+  const high = svgEl('text', { x: barX + barW + 4, y: barY + barH / 2 + 3, 'text-anchor': 'start' });
+  high.textContent = 'High';
+  svg.appendChild(high);
+  container.innerHTML = '';
+  container.appendChild(svg);
+}
+
+function renderGridHeatmap(containerId, rowLabels, colLabels, matrix, width, height, tooltipFn, leftMargin) {
+  const container = document.getElementById(containerId);
+  const margin = { top: 20, right: 8, bottom: 4, left: leftMargin || 120 };
   const w = width - margin.left - margin.right;
-  const rowH = (height - margin.top - margin.bottom) / counties.length;
-  const colW = w / 12;
+  const rowH = (height - margin.top - margin.bottom) / rowLabels.length;
+  const colW = w / colLabels.length;
   const svg = svgEl('svg', { width, height, viewBox: `0 0 ${width} ${height}` });
 
-  const byCounty = {};
-  counties.forEach(c => { byCounty[c] = new Array(12).fill(0); });
-  heatRows.forEach(r => { byCounty[r.CountyPrimary][r.Month - 1] = r.count; });
-
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  monthNames.forEach((m, i) => {
+  colLabels.forEach((c, i) => {
     const lbl = svgEl('text', { x: margin.left + i * colW + colW / 2, y: margin.top - 6, 'text-anchor': 'middle' });
-    lbl.textContent = m;
+    lbl.textContent = c;
     svg.appendChild(lbl);
   });
 
-  counties.forEach((county, ri) => {
-    const rowVals = byCounty[county];
+  rowLabels.forEach((row, ri) => {
+    const rowVals = matrix[ri];
     const rowMax = Math.max(1, ...rowVals);
     const y = margin.top + ri * rowH;
 
     const lbl = svgEl('text', { x: margin.left - 8, y: y + rowH / 2 + 3, 'text-anchor': 'end' });
-    lbl.textContent = county;
+    lbl.textContent = row;
     svg.appendChild(lbl);
 
-    rowVals.forEach((val, mi) => {
-      const opacity = val === 0 ? 0.04 : 0.12 + 0.83 * (val / rowMax);
-      const x = margin.left + mi * colW;
+    rowVals.forEach((val, ci) => {
+      const x = margin.left + ci * colW;
+      const fill = val === 0 ? 'var(--gridline)' : weatherColor(val / rowMax);
       const rect = svgEl('rect', {
-        x: x + 1, y: y + 1, width: colW - 2, height: rowH - 2, rx: 2,
-        fill: 'var(--series-small)', 'fill-opacity': opacity.toFixed(2),
+        x: x + 1, y: y + 1, width: colW - 2, height: rowH - 2, rx: 2, fill,
       });
       rect.style.cursor = 'pointer';
-      rect.addEventListener('mousemove', (e) => showTip(
-        `<b>${county} — ${monthNames[mi]}</b><br>${val} fire${val === 1 ? '' : 's'}`, e.clientX, e.clientY
-      ));
+      rect.addEventListener('mousemove', (e) => showTip(tooltipFn(row, colLabels[ci], val), e.clientX, e.clientY));
       rect.addEventListener('mouseleave', hideTip);
       svg.appendChild(rect);
     });
@@ -627,6 +701,16 @@ function renderHeatmap(containerId, counties, heatRows, width, height) {
 
   container.innerHTML = '';
   container.appendChild(svg);
+}
+
+function renderHeatmap(containerId, counties, heatRows, width, height) {
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const byCounty = {};
+  counties.forEach(c => { byCounty[c] = new Array(12).fill(0); });
+  heatRows.forEach(r => { byCounty[r.CountyPrimary][r.Month - 1] = r.count; });
+  const matrix = counties.map(c => byCounty[c]);
+  renderGridHeatmap(containerId, counties, monthNames, matrix, width, height,
+    (county, month, val) => `<b>${county} — ${month}</b><br>${val} fire${val === 1 ? '' : 's'}`);
 }
 
 function renderTable(containerId, headers, rows) {
@@ -683,8 +767,19 @@ function init() {
     DATA.county.map(d => [d.CountyPrimary, d.count.toLocaleString(), fmt(d.acres)]));
 
   renderHeatmap('chart-heatmap', countyLabels, DATA.heatmap, 1080, 340);
+  renderWeatherScaleBar('scale-heatmap', 1080);
   renderTable('table-peak-month', ['County', 'Peak Month', 'Fires in peak month', '% of county total in that month'],
     DATA.peak_month.map(p => [p.CountyPrimary, p.PeakMonth, p.PeakCount, (p.PeakShare * 100).toFixed(0) + '%']));
+
+  const cov = DATA.reporting_coverage;
+  document.getElementById('destructive-desc').textContent =
+    `Structure-loss and fatality fields are only reported for a minority of fires in this dataset ` +
+    `(structures: ${(cov.structures_pct * 100).toFixed(0)}% of fires, fatalities: ${(cov.fatalities_pct * 100).toFixed(0)}%) ` +
+    `— rankings below are among fires that have a reported value, not the full dataset.`;
+  renderTable('table-destructive', ['Fire', 'County', 'Year', 'Acres', 'Structures', 'Per 1,000 ac'],
+    DATA.destructive.map(d => [d.Name, d.CountyPrimary, d.Year, fmt(d.AcresBurned), d.StructuresDestroyedNum, d.StructuresPer1000Acres.toFixed(0)]));
+  renderTable('table-deadly', ['Fire', 'County', 'Year', 'Acres', 'Fatalities'],
+    DATA.deadly.map(d => [d.Name, d.CountyPrimary, d.Year, fmt(d.AcresBurned), d.FatalitiesNum]));
 
   const points = DATA.points.map(p => ({ lat: p.lat, lon: p.lon, acres: p.acres, year: p.Year, large: p.Large, county: p.county, name: p.Name }));
   renderScatterMap('chart-map', points, 1080, 460);
@@ -707,7 +802,7 @@ function init() {
 
   if (DATA.thresholds) {
     document.getElementById('panel-thresholds').style.display = '';
-    renderThresholdBar('chart-thresholds', DATA.thresholds, 1080, 220);
+    renderThresholdBar('chart-thresholds', DATA.thresholds, 1080, 340);
   }
 
   if (DATA.historical) {
@@ -727,6 +822,19 @@ function init() {
 
     const causes = DATA.historical.cause_breakdown;
     renderHBar('chart-cause', causes.map(c => c.cause), causes.map(c => c.count), 500, 320, 'fires');
+
+    const cd = DATA.historical.cause_by_decade;
+    renderGridHeatmap('chart-cause-decade', cd.causes, cd.decades, cd.matrix, 1080, 280,
+      (cause, decade, val) => `<b>${cause} — ${decade}</b><br>${val} fire${val === 1 ? '' : 's'}`, 140);
+    renderWeatherScaleBar('scale-cause-decade', 1080);
+
+    document.getElementById('region-label').textContent =
+      `Fires by CAL FIRE region (only ${(DATA.historical.calfire_coverage_pct * 100).toFixed(0)}% of fires are on CAL FIRE-managed land — rest is federal)`;
+    const regions = DATA.historical.region_breakdown;
+    renderHBar('chart-region', regions.map(r => r.region), regions.map(r => r.count), 500, 140, 'fires', 160);
+
+    const cfUnits = DATA.historical.calfire_units;
+    renderHBar('chart-calfire-units', cfUnits.map(u => u.unit), cfUnits.map(u => u.acres), 500, 320, 'acres', 170);
   }
 }
 
