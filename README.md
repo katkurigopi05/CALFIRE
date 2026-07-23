@@ -38,7 +38,7 @@ python scripts/train_model.py     # picks up weather_data.csv automatically
 ## Quick start
 
 ```bash
-pip install pandas numpy scikit-learn statsmodels prophet joblib requests
+pip install -r requirements.txt
 
 python scripts/train_model.py            # flagship >=1,000 ac model
 python scripts/threshold_analysis.py     # multi-threshold pattern analysis + risk-profile models
@@ -48,6 +48,14 @@ python scripts/build_dashboard_data.py   # regenerates dashboard/index.html from
 
 python scripts/predict.py --county Riverside --date 2026-08-15
 ```
+
+## CI
+
+`.github/workflows/pipeline.yml` runs the full pipeline above (every script
+except `fetch_weather.py`, which needs live internet access) on every push
+and PR to `main`, so a change that breaks any script gets caught
+automatically instead of only being noticed the next time someone runs it
+by hand.
 
 ## What the multi-threshold analysis found
 
