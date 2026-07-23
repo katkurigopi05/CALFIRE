@@ -1,16 +1,19 @@
 """
-CALFIRE time-series forecasting: AR, ARIMA (SARIMAX), and Prophet.
+CALFIRE time-series forecasting: AR, ARIMA (SARIMAX), Prophet, and a
+trend+season regression.
 
 Aggregates incidents into monthly series (fire count, total acres burned) and
-fits three forecasting models to each, so we can read off seasonality (CA's
+fits several forecasting models to each, so we can read off seasonality (CA's
 annual fire season) and compare which model actually predicts held-out months
 best before trusting any forward forecast.
 
-Naive and Seasonal Naive are included as baselines that AR/ARIMA/Prophet must
-actually beat — a fancier model that loses to "repeat last month" or "repeat
-the same month last year" isn't earning its complexity (methodology follows
-the accuracy-comparison structure used in a companion time-series project:
-github.com/katkurigopi05/Time-Series).
+Naive and Seasonal Naive are included as baselines that the fancier models
+must actually beat — a model that loses to "repeat last month" or "repeat
+the same month last year" isn't earning its complexity. TrendSeason (linear
+trend + seasonal month dummies, i.e. tslm(~ trend + season)) is included as
+a classical benchmark alongside them. Methodology follows the
+accuracy-comparison structure used in a companion time-series project:
+github.com/katkurigopi05/Time-Series.
 
 Usage: python scripts/timeseries_analysis.py
 """
@@ -22,6 +25,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
+import statsmodels.api as sm
 
 from statsmodels.tsa.ar_model import AutoReg
 from statsmodels.tsa.statespace.sarimax import SARIMAX
@@ -62,6 +66,28 @@ def fit_naive(train, steps):
 def fit_seasonal_naive(train, steps, period=SEASONAL_PERIOD):
     last_cycle = train.iloc[-period:].values
     return np.array([last_cycle[i % period] for i in range(steps)])
+
+
+def _trend_season_design(dates, trend_values):
+    """tslm(~ trend + season)-style design matrix: a linear trend plus 11
+    month dummies (12th absorbed into the intercept)."""
+    months = pd.Categorical(dates.month, categories=range(1, 13))
+    X = pd.get_dummies(months, prefix="m", drop_first=True).astype(float)
+    X.insert(0, "trend", trend_values)
+    return sm.add_constant(X, has_constant="add")
+
+
+def fit_trend_season(train, steps):
+    """Regression with linear trend + seasonal month dummies, matching
+    tslm(train ~ trend + season) from the reference time-series methodology
+    (github.com/katkurigopi05/Time-Series)."""
+    X_train = _trend_season_design(train.index, np.arange(len(train)))
+    model = sm.OLS(train.values, X_train.values).fit()
+
+    future_dates = pd.date_range(train.index[-1] + pd.offsets.MonthBegin(1), periods=steps, freq="MS")
+    X_future = _trend_season_design(future_dates, np.arange(len(train), len(train) + steps))
+    X_future = X_future[X_train.columns]
+    return model.predict(X_future.values)
 
 
 def fit_ar(train, steps):
@@ -105,6 +131,7 @@ def backtest_series(series, name):
     results = {
         "Naive": fit_naive(train, BACKTEST_MONTHS),
         "SeasonalNaive": fit_seasonal_naive(train, BACKTEST_MONTHS),
+        "TrendSeason": np.asarray(fit_trend_season(train, BACKTEST_MONTHS)),
         "AR": np.asarray(fit_ar(train, BACKTEST_MONTHS)),
         "ARIMA": np.asarray(fit_sarimax(train, BACKTEST_MONTHS)[0]),
         "Prophet": fit_prophet(train, BACKTEST_MONTHS)["yhat"].values,
@@ -132,6 +159,7 @@ def forecast_series(series, name):
     prophet_fc = fit_prophet(series, FORECAST_MONTHS)
     naive_pred = np.clip(fit_naive(series, FORECAST_MONTHS), 0, None)
     seasonal_naive_pred = np.clip(fit_seasonal_naive(series, FORECAST_MONTHS), 0, None)
+    trend_season_pred = np.clip(fit_trend_season(series, FORECAST_MONTHS), 0, None)
 
     future_dates = pd.date_range(series.index[-1] + pd.offsets.MonthBegin(1), periods=FORECAST_MONTHS, freq="MS")
 
@@ -141,6 +169,7 @@ def forecast_series(series, name):
             "dates": [d.strftime("%Y-%m-%d") for d in future_dates],
             "Naive": naive_pred.tolist(),
             "SeasonalNaive": seasonal_naive_pred.tolist(),
+            "TrendSeason": trend_season_pred.tolist(),
             "AR": ar_pred.tolist(),
             "ARIMA": sarimax_pred.tolist(),
             "ARIMA_lower": np.clip(sarimax_ci.iloc[:, 0].values, 0, None).tolist(),

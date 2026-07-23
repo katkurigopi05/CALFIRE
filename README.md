@@ -17,7 +17,7 @@ acres burned).
 - `scripts/model_common.py` — shared feature/data-loading helpers (geo cleaning, county history rate, geo clustering, the model bake-off)
 - `scripts/train_model.py` — flagship single-threshold model (≥1,000 ac): cyclical date encoding, dry-season flag, leak-free county fire-history rate, geo clustering, optional weather features, RandomForest/HistGradientBoosting/LogisticRegression bake-off. Run: `python scripts/train_model.py`
 - `scripts/threshold_analysis.py` — runs the same pipeline at 10/50/100/500/1,000 acres to see which "large fire" definitions the data actually has a learnable pattern for (see `output/threshold_analysis_report.md`). Powers `predict.py`'s full risk profile and the dashboard's threshold chart.
-- `scripts/timeseries_analysis.py` — aggregates incidents into monthly series (count, acres burned) and forecasts with Naive, Seasonal Naive, AR, ARIMA (SARIMAX), and Prophet, picking whichever backtests best (see `output/timeseries_report.md`). Feeds the dashboard's 12-month forecast panel.
+- `scripts/timeseries_analysis.py` — aggregates incidents into monthly series (count, acres burned) and forecasts with Naive, Seasonal Naive, a trend+season regression (tslm-style, per the companion Time-Series repo's methodology), AR, ARIMA (SARIMAX), and Prophet, picking whichever backtests best (see `output/timeseries_report.md`). Feeds the dashboard's 12-month forecast panel. TrendSeason currently wins both series — it beats AR on fire count and turns the acres-burned series from a "toss-up vs Naive" into a real, beaten-baseline forecast.
 - `scripts/historical_trends.py` — long-run annual trend analysis on `California_Historic_Fire_Perimeters.csv` (1878-2025). Backtests Naive, Linear/Quadratic Trend regression, ETS, and ARIMA on the 1950+ window (CAL FIRE's own cutoff for more-reliable collection), forecasts 10 years forward, and reports decade/cause breakdowns (see `output/historical_trends_report.md`). Feeds the dashboard's "148 Years of California Wildfire History" panel.
 - `scripts/fetch_weather.py` — pulls historical daily weather (temp/precip/wind/ET0/humidity) per incident from the free Open-Meteo Archive API. **Must be run somewhere with open internet access** — writes `weather_data.csv`, which `train_model.py` and `threshold_analysis.py` pick up automatically if present.
 - `scripts/predict.py` — CLI risk tool: given a county + date (and optionally weather or `--fetch-weather`), prints large-fire probability at every threshold from `threshold_analysis.py`.
@@ -55,7 +55,9 @@ Re-running the same model at 10/50/100/500/1,000 acres shows the "large fire"
 line matters: at 10 acres, 98% of recorded incidents already qualify (CAL
 FIRE's public dataset mostly logs already-notable fires), so there's no real
 minority class to learn from. Signal strengthens steadily from there — test
-ROC-AUC goes from ~0.62 at 10 acres up to ~0.72 at 1,000 acres. See
+ROC-AUC goes from ~0.62 at 10 acres up to ~0.72 at 1,000 acres — filling in
+the gap with 75/150/200/300/750-acre cutoffs shows this is a steady climb
+across the whole 50-1,000 range, not one sharp inflection point. See
 `output/threshold_analysis_report.md` for the full breakdown.
 
 ## What 148 years of data shows

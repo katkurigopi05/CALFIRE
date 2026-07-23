@@ -2,8 +2,11 @@
 CALFIRE multi-threshold pattern analysis.
 
 Runs the same leak-free feature pipeline and model bake-off as train_model.py
-at several acreage cutoffs (10 / 50 / 100 / 500 / 1,000 acres) to see which
-definitions of "large fire" the data actually carries a learnable signal for.
+at several acreage cutoffs (10 / 50 / 75 / 100 / 150 / 200 / 300 / 500 / 750 /
+1,000 acres) to see which definitions of "large fire" the data actually
+carries a learnable signal for. The extra cutoffs between 50 and 1,000 map
+out exactly where the signal strengthens, rather than guessing between four
+widely-spaced points.
 Each threshold gets its own county-historical-rate feature (the rate of
 >=100-acre fires in a county is a different number than the rate of >=10-acre
 fires), its own model bake-off, and its own holdout evaluation.
@@ -37,7 +40,7 @@ from model_common import (
 warnings.filterwarnings("ignore")
 np.random.seed(RANDOM_STATE)
 
-THRESHOLDS_ACRES = [10, 50, 100, 500, 1000]
+THRESHOLDS_ACRES = [10, 50, 75, 100, 150, 200, 300, 500, 750, 1000]
 TEST_SIZE = 0.2
 
 ROOT = Path(__file__).parent.parent
