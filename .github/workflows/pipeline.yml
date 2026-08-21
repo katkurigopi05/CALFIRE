@@ -1,0 +1,50 @@
+name: Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Train flagship model (>=1,000 ac)
+        run: python scripts/train_model.py
+
+      - name: Multi-threshold pattern analysis
+        run: python scripts/threshold_analysis.py
+
+      - name: Monthly time-series forecast
+        run: python scripts/timeseries_analysis.py
+
+      - name: 100+ year historical trend analysis
+        run: python scripts/historical_trends.py
+
+      - name: Build dashboard
+        run: python scripts/build_dashboard_data.py
+
+      - name: Smoke-test the real-time risk tool
+        run: python scripts/predict.py --county Riverside --date 2026-08-15
+
+      - name: Verify expected outputs exist
+        run: |
+          test -s output/model_v2.pkl
+          test -s output/multi_threshold_models.pkl
+          test -s output/threshold_analysis_report.md
+          test -s output/timeseries_report.md
+          test -s output/historical_trends_report.md
+          test -s dashboard/index.html
