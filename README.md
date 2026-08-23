@@ -133,3 +133,25 @@ It reads the committed `dashboard/*.json` files (`data`, `forecast`,
 quickest reference for the exact Python version and install steps used.
 
 See `CODE_REVIEW.md` and `QUICK_FIXES.md` for known rough edges.
+
+## Libraries & Methods
+
+Scanned every `.py`/`.ipynb` file (11 files, 2,484 lines).
+
+**Modeling** — `sklearn.ensemble.RandomForestClassifier` is the core
+classifier, wrapped in a `Pipeline` with `ColumnTransformer`,
+`SimpleImputer`, `OneHotEncoder` and `OrdinalEncoder`; evaluated with
+`cross_val_score` under `StratifiedKFold`, scored with `mean_absolute_error`
+and `mean_squared_error`.
+
+**Forecasting** — three different time-series models are actually compared,
+not just one: `statsmodels.tsa.statespace.SARIMAX`, `statsmodels.tsa.holtwinters
+.ExponentialSmoothing`, `statsmodels.tsa.ar_model.AutoReg`, and `prophet.Prophet`.
+
+**Data** — pandas, numpy, `joblib` for model persistence.
+
+**Visualization** — matplotlib, seaborn.
+
+**Own modules** — `model_common` (`clean_lat_lon`, `load_historic_perimeters`,
+`add_calfire_unit_labels`, `load_dates_and_acres`) and a `fetch_weather` module
+that pulls live weather via `requests`.
