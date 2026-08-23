@@ -116,3 +116,20 @@ fires by structures destroyed per 1,000 acres (small-footprint fires that
 hit dense areas hard) and by fatalities. Note the structures/fatalities
 fields are only populated for ~11%/~1% of fires respectively — treat these
 as "worst known cases," not a complete accounting.
+
+## Running it
+
+```bash
+pip install pandas numpy scikit-learn matplotlib seaborn
+python CALFIRE_improved.py            # the cleaned-up pipeline
+jupyter notebook "CALFIRE(RF) RN7945.ipynb"   # the exploratory version
+```
+
+The dashboard is static — open `dashboard/index.html` directly in a browser.
+It reads the committed `dashboard/*.json` files (`data`, `forecast`,
+`historical`, `threshold_summary`), so it works offline with no server.
+
+`.github/workflows/pipeline.yml` runs the pipeline on push, which is also the
+quickest reference for the exact Python version and install steps used.
+
+See `CODE_REVIEW.md` and `QUICK_FIXES.md` for known rough edges.
