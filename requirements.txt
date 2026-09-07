@@ -5,3 +5,6 @@ statsmodels
 prophet
 joblib
 requests
+matplotlib
+seaborn
+jupyter

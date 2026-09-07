@@ -70,7 +70,7 @@ def fetch_one(lat, lon, date_str, session):
             }
         except requests.RequestException as exc:
             if attempt == MAX_RETRIES - 1:
-                print(f"  failed for {lat},{lon},{date_str}: {exc}", file=sys.stderr)
+                print(f"  weather fetch failed after retries: {exc}", file=sys.stderr)
                 return None
             time.sleep(2 ** attempt)
     return None
