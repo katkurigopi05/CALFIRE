@@ -117,6 +117,20 @@ hit dense areas hard) and by fatalities. Note the structures/fatalities
 fields are only populated for ~11%/~1% of fires respectively — treat these
 as "worst known cases," not a complete accounting.
 
+## Local incident dashboard app
+
+You can run the lightweight local dashboard/API added in this branch:
+
+```bash
+python app.py --host 127.0.0.1 --port 8000
+```
+
+Then open `http://127.0.0.1:8000`.
+
+API endpoints:
+- `GET /api/summary`
+- `GET /api/incidents?limit=12`
+
 ## Running it
 
 ```bash
